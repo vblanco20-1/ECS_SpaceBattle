@@ -2,23 +2,22 @@
 #include "GameFramework/Actor.h"
 #include "Battle_ECSWorld.h"
 #include "EngineUtils.h"
+#include "Engine/Classes/Engine/World.h"
 #include "EngineMinimal.h"
-
 
 
 UECS_ComponentSystemLink::UECS_ComponentSystemLink()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	bAutoActivate = true;
-	
 }
 
 void UECS_ComponentSystemLink::BeginPlay()
 {
 	Super::BeginPlay();
 
-	UWorld* World = GEngine->GetWorldFromContextObject(GetOwner(),EGetWorldErrorMode::Assert);
-
+	UWorld* World = GetWorld();
+	
 	// We do nothing if no is class provided, rather than giving ALL actors!
 	WorldActor = nullptr;
 	if (World)

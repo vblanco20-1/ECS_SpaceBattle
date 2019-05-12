@@ -6,8 +6,7 @@ public class ECSTesting : ModuleRules
 {
 	public ECSTesting(ReadOnlyTargetRules Target) : base(Target)
 	{
-		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-       // UEBuildConfiguration.bForceEnableExceptions = true;
+        PrivatePCHHeaderFile = "ThirdParty/entt/entt.hpp";
         PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" });
         bEnableExceptions = true;
         PublicIncludePaths.AddRange(

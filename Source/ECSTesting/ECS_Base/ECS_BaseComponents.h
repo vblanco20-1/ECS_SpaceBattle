@@ -2,6 +2,8 @@
 #include "CoreMinimal.h"
 #include "ECSTesting.h"
 #include "ECS_Core.h"
+#include "Runtime/Engine/Classes/Engine/World.h"
+#include "Runtime/Engine/Public/WorldCollision.h"
 #include "ECS_ComponentWrapper.h"
 #include "ECS_BaseComponents.generated.h"
 

@@ -2,8 +2,8 @@
 
 
 #include "entt/entt.hpp"
-
 #include <vector>
+#include "Runtime/Core/Public/Math/RandomStream.h"
 #include "ECSTesting.h"
 
 DECLARE_CYCLE_STAT(TEXT("ECS: Total System Update"), STAT_TotalUpdate, STATGROUP_ECS);
