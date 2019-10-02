@@ -65,6 +65,7 @@ void StaticMeshDrawSystem::update(ECS_Registry &registry, float dt)
 
 		
 	}
+	
 	for (auto &i : MeshMap)
 	{	
 		SCOPE_CYCLE_COUNTER(STAT_InstancedMeshClean)
@@ -74,14 +75,18 @@ void StaticMeshDrawSystem::update(ECS_Registry &registry, float dt)
 
 		//if we have more instances than renderables, set the instances to null transform so they dont draw.
 		//they will get cleanup once a second.
-		while (i.Value.rendered < i.Value.ISM->GetInstanceCount())
+		if (IsValid(i.Value.ISM))
 		{
+			while (i.Value.rendered < i.Value.ISM->GetInstanceCount())
+			{
 
-			i.Value.rendered++;
-			i.Value.ISM->UpdateInstanceTransform(i.Value.rendered, nulltransform, true, false);
+				i.Value.rendered++;
+				i.Value.ISM->UpdateInstanceTransform(i.Value.rendered, nulltransform, true, false);
 
+			}
+			i.Value.ISM->MarkRenderStateDirty();
 		}
-		i.Value.ISM->MarkRenderStateDirty();
+		
 	}
 
 }
@@ -201,11 +206,15 @@ void RaycastSystem::update(ECS_Registry &registry, float dt)
 					//if the entity was a projectile, create explosion and destroy it
 					if (registry.has<FProjectile>(entity))
 					{
+						
 						auto explosionclass = registry.get<FProjectile>(entity).ExplosionArchetypeClass;
 						if (explosionclass)
 						{
 							//create new entity to spawn explosion
-							auto h = registry.create<FPosition, FLifetime, FArchetypeSpawner>();
+							auto h = registry.create();
+							registry.assign<FPosition>(h);
+							registry.assign<FLifetime>(h);
+							registry.assign<FArchetypeSpawner>(h);
 							registry.get<FPosition>(h).pos = tdata.OutHits[0].ImpactPoint;
 							registry.get<FLifetime>(h).LifeLeft = 0.1;
 							FArchetypeSpawner &spawn = registry.get<FArchetypeSpawner>(h);

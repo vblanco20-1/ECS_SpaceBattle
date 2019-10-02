@@ -5,7 +5,7 @@
 
 #include <vector>
 #include "ECSTesting.h"
-
+#include "LinearMemory.h"
 DECLARE_CYCLE_STAT(TEXT("ECS: Total System Update"), STAT_TotalUpdate, STATGROUP_ECS);
 
 
@@ -41,10 +41,14 @@ public:
 		{
 			delete s;
 		}
+		FreeLinearMemory(ScratchPad);
 	}
 
 	void InitializeSystems(AActor* _Owner)
 	{
+		//allocate 10 mb
+		ScratchPad = AllocateLinearMemory(MEGABYTE * 10);
+
 		Owner = _Owner;
 		for (auto s : systems)
 		{
@@ -90,6 +94,9 @@ public:
 
 	ECS_Registry *GetRegistry() { return &registry; };
 	FRandomStream rng;
+
+	LinearMemory ScratchPad;
+
 protected:
 
 	AActor * Owner;

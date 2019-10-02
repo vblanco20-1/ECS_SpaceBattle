@@ -2,15 +2,22 @@
 #define ENTT_CORE_IDENT_HPP
 
 
-#include<type_traits>
-#include<cstddef>
-#include<utility>
+#include <type_traits>
+#include <cstddef>
+#include <utility>
+#include "../config/config.h"
 
 
 namespace entt {
 
 
-namespace {
+namespace internal {
+
+
+/**
+ * @cond TURN_OFF_DOXYGEN
+ * Internal details not to be documented.
+ */
 
 
 template<typename... Types>
@@ -18,12 +25,12 @@ struct Identifier final: Identifier<Types>... {
     using identifier_type = std::size_t;
 
     template<std::size_t... Indexes>
-    constexpr Identifier(std::index_sequence<Indexes...>)
+    constexpr Identifier(std::index_sequence<Indexes...>) ENTT_NOEXCEPT
         : Identifier<Types>{std::index_sequence<Indexes>{}}...
     {}
 
     template<typename Type>
-    constexpr std::size_t get() const {
+    constexpr std::size_t get() const ENTT_NOEXCEPT {
         return Identifier<std::decay_t<Type>>::get();
     }
 };
@@ -34,17 +41,23 @@ struct Identifier<Type> {
     using identifier_type = std::size_t;
 
     template<std::size_t Index>
-    constexpr Identifier(std::index_sequence<Index>)
+    constexpr Identifier(std::index_sequence<Index>) ENTT_NOEXCEPT
         : index{Index}
     {}
 
-    constexpr std::size_t get() const {
+    constexpr std::size_t get() const ENTT_NOEXCEPT {
         return index;
     }
 
 private:
     const std::size_t index;
 };
+
+
+/**
+ * Internal details not to be documented.
+ * @endcond TURN_OFF_DOXYGEN
+ */
 
 
 }
@@ -87,7 +100,7 @@ private:
  * @tparam Types List of types for which to generate identifiers.
  */
 template<typename... Types>
-constexpr auto ident = Identifier<std::decay_t<Types>...>{std::make_index_sequence<sizeof...(Types)>{}};
+constexpr auto ident = internal::Identifier<std::decay_t<Types>...>{std::make_index_sequence<sizeof...(Types)>{}};
 
 
 }

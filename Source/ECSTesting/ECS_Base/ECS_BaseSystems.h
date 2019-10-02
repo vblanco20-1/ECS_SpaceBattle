@@ -68,7 +68,7 @@ struct CopyTransformToECSSystem :public System {
 		assert(OwnerActor);		
 
 		//copy transforms from actor into FActorTransform
-		auto ActorTransformView = registry.persistent<FCopyTransformToECS, FActorReference>();
+		auto ActorTransformView = registry.view<FCopyTransformToECS, FActorReference>();
 		for (auto e : ActorTransformView)
 		{
 			SCOPE_CYCLE_COUNTER(STAT_CopyTransformECS);
@@ -122,12 +122,11 @@ struct CopyTransformToActorSystem :public System {
 				transform.transform.SetScale3D(sc.scale);
 			});
 		}
-		
+		SCOPE_CYCLE_COUNTER(STAT_CopyTransformActor);
 		//copy transforms from actor into FActorTransform	
-		auto TransformView = registry.persistent<FCopyTransformToActor, FActorReference, FActorTransform>();
+		auto TransformView = registry.view<FCopyTransformToActor, FActorReference, FActorTransform>();
 		for (auto e : TransformView)
-		{
-			SCOPE_CYCLE_COUNTER(STAT_CopyTransformActor);
+		{			
 			const FTransform&transform = TransformView.get<FActorTransform>(e).transform;
 			FActorReference&actor = TransformView.get<FActorReference>(e);
 
@@ -222,6 +221,7 @@ public:
 
 			ISMData NewData;
 			NewData.ISM = NewComp;
+			NewData.rendered = 0;
 			auto &d = MeshMap.Add(mesh, NewData);
 			
 			return &d;
