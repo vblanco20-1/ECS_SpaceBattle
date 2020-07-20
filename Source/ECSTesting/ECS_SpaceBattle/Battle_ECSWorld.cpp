@@ -22,22 +22,25 @@ void A_ECSWorldActor::BeginPlay()
 
 		ECSWorld = MakeUnique<ECS_World>();
 		
-		ECSWorld->CreateAndRegisterSystem<CopyTransformToECSSystem>();
-		ECSWorld->CreateAndRegisterSystem<BoidSystem>();
+		ECSWorld->CreateAndRegisterSystem<CopyTransformToECSSystem>("CopyTransform");
+		ECSWorld->CreateAndRegisterSystem<BoidSystem>("Boids");
 
-		ECSWorld->CreateAndRegisterSystem<MovementSystem>();
-		ECSWorld->CreateAndRegisterSystem<ExplosionSystem>();
-		ECSWorld->CreateAndRegisterSystem<SpaceshipSystem>();
-		ECSWorld->CreateAndRegisterSystem<RaycastSystem>();
-		ECSWorld->CreateAndRegisterSystem<LifetimeSystem>();
-		ECSWorld->CreateAndRegisterSystem<StaticMeshDrawSystem>();
-		ECSWorld->CreateAndRegisterSystem<DebugDrawSystem>();
+		ECSWorld->CreateAndRegisterSystem<MovementSystem>("Movement");
+		ECSWorld->CreateAndRegisterSystem<ExplosionSystem>("Explosion");
+		ECSWorld->CreateAndRegisterSystem<SpaceshipSystem>("Spaceship");
+		ECSWorld->CreateAndRegisterSystem<RaycastSystem>("Raycast");
+		ECSWorld->CreateAndRegisterSystem<LifetimeSystem>("Lifetime");
+		
+		ECSWorld->CreateAndRegisterSystem<DebugDrawSystem>("DebugDraw");
 
-		ECSWorld->CreateAndRegisterSystem<CopyTransformToActorSystem>();
+		
+		ECSWorld->CreateAndRegisterSystem<StaticMeshDrawSystem>("StaticDraws");
 
-		ECSWorld->CreateAndRegisterSystem<ArchetypeSpawnerSystem>();		
+		ECSWorld->CreateAndRegisterSystem<CopyTransformToActorSystem>("CopyBack");
 
-				ECSWorld->InitializeSystems(this);
+		ECSWorld->CreateAndRegisterSystem<ArchetypeSpawnerSystem>("Spawner");		
+
+		ECSWorld->InitializeSystems(this);
 		
 		
 	
@@ -48,7 +51,35 @@ void A_ECSWorldActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	ECSWorld->UpdateSystems(DeltaTime);
+	SCOPE_CYCLE_COUNTER(STAT_TotalUpdate);
+
+	ECSWorld->UpdateSystem("CopyTransform",DeltaTime);
+
+	auto inst = Async(EAsyncExecution::TaskGraph, [&]() {
+		ECSWorld->UpdateSystem("Boids", DeltaTime);
+		ECSWorld->UpdateSystem("Movement", DeltaTime);
+		ECSWorld->UpdateSystem("Explosion", DeltaTime);
+		ECSWorld->UpdateSystem("Spaceship", DeltaTime);
+		});
+
+	ECSWorld->UpdateSystem("Raycast", DeltaTime);
+
+	inst.Wait();
+
+	ECSWorld->UpdateSystem("Lifetime", DeltaTime);
+	
+	ECSWorld->UpdateSystem("DebugDraw", DeltaTime);
+
+
+	auto inst2 = Async(EAsyncExecution::TaskGraph, [&]() {
+		ECSWorld->UpdateSystem("StaticDraws", DeltaTime); 
+	});
+
+	ECSWorld->UpdateSystem("CopyBack", DeltaTime);
+
+	inst2.Wait();
+
+	ECSWorld->UpdateSystem("Spawner", DeltaTime);
 
 }
 

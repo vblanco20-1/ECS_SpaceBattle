@@ -6,6 +6,8 @@
 #include <vector>
 #include "ECSTesting.h"
 #include "LinearMemory.h"
+#include "Map.h"
+#include "String.h"
 DECLARE_CYCLE_STAT(TEXT("ECS: Total System Update"), STAT_TotalUpdate, STATGROUP_ECS);
 
 
@@ -57,30 +59,24 @@ public:
 	}
 
 
-	void UpdateSystems(float DeltaTime)
-	{
-		SCOPE_CYCLE_COUNTER(STAT_TotalUpdate);
-
-		for (auto s : systems)
-		{
-			s->update(registry, DeltaTime);
-		}
-	}
+	void UpdateSystems(float DeltaTime);
 
 	template<typename T>
-	System* CreateAndRegisterSystem()
+	System* CreateAndRegisterSystem(FString name)
 	{
 		System * s = new T();
 		if (s)
 		{
 			systems.push_back(s);
+			namedSystems.Add(name, s);
 		}
 		return s;
 	}
 
-	void RegisterSystem(System* newSystem)
+	void RegisterSystem(System* newSystem, FString name)
 	{
 		systems.push_back(newSystem);
+		namedSystems[name] = newSystem;
 	}
 	EntityHandle NewEntity() {
 		EntityHandle h;
@@ -92,6 +88,9 @@ public:
 		registry.destroy(ent.handle);
 	}
 
+	System* GetSystem(FString name);
+	void UpdateSystem(FString name, float Dt);
+
 	ECS_Registry *GetRegistry() { return &registry; };
 	FRandomStream rng;
 
@@ -102,7 +101,7 @@ protected:
 	AActor * Owner;
 
 	std::vector<System*> systems;
-
+	TMap<FString, System*> namedSystems;
 	ECS_Registry registry;
 	
 };
