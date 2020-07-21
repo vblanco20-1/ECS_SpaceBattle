@@ -4,6 +4,7 @@
 #include "ECS_Core.h"
 #include "ECS_BaseSystems.h"
 #include "ECS_BattleSystems.h"
+#include "SystemTasks.h"
 
 
 // Sets default values
@@ -45,7 +46,17 @@ void A_ECSWorldActor::BeginPlay()
 		
 	
 }
-
+namespace ECSCVars
+{
+	// Listen server smoothing
+	static int32 EnableParallel = 0;
+	FAutoConsoleVariableRef CVarParallelECS(
+		TEXT("p.parallelECS"),
+		EnableParallel,
+		TEXT("Whether to enable mesh smoothing on listen servers for the local view of remote clients.\n")
+		TEXT("0: Disable, 1: Enable"),
+		ECVF_Default);
+}
 // Called every frame
 void A_ECSWorldActor::Tick(float DeltaTime)
 {
@@ -53,33 +64,20 @@ void A_ECSWorldActor::Tick(float DeltaTime)
 
 	SCOPE_CYCLE_COUNTER(STAT_TotalUpdate);
 
-	ECSWorld->UpdateSystem("CopyTransform",DeltaTime);
+	TArray<SystemTaskGraph*> systasks;
 
-	auto inst = Async(EAsyncExecution::TaskGraph, [&]() {
-		ECSWorld->UpdateSystem("Boids", DeltaTime);
-		ECSWorld->UpdateSystem("Movement", DeltaTime);
-		ECSWorld->UpdateSystem("Explosion", DeltaTime);
-		ECSWorld->UpdateSystem("Spaceship", DeltaTime);
-		});
+	for(auto sys : ECSWorld->systems){
+		SystemTaskGraph* s = sys->schedule(ECSWorld->registry);
+		assert(s);
+		//if (s) {
+			systasks.Add(s);
+		//}
+	}
 
-	ECSWorld->UpdateSystem("Raycast", DeltaTime);
+	ECSSystemScheduler* sched = new ECSSystemScheduler();
 
-	inst.Wait();
+	sched->systasks = systasks;
 
-	ECSWorld->UpdateSystem("Lifetime", DeltaTime);
-	
-	ECSWorld->UpdateSystem("DebugDraw", DeltaTime);
-
-
-	auto inst2 = Async(EAsyncExecution::TaskGraph, [&]() {
-		ECSWorld->UpdateSystem("StaticDraws", DeltaTime); 
-	});
-
-	ECSWorld->UpdateSystem("CopyBack", DeltaTime);
-
-	inst2.Wait();
-
-	ECSWorld->UpdateSystem("Spawner", DeltaTime);
-
+	sched->Run(ECSCVars::EnableParallel == 1,ECSWorld->registry);
 }
 

@@ -15,52 +15,18 @@ struct ExplosionSystem :public System {
 
 	float elapsed = 0;
 
-	void update(ECS_Registry &registry, float dt) override
-	{
-		assert(OwnerActor);
-		SCOPE_CYCLE_COUNTER(STAT_Explosion);
-
-		auto AllExplosionsView = registry.view<FExplosion>();
-		for (auto e : AllExplosionsView) {
-			FExplosion & ex = AllExplosionsView.get(e);
-
-			ex.LiveTime += dt;
-			if (ex.LiveTime > ex.Duration)
-			{
-				registry.assign<FDestroy>(e);
-			}
-		}
+	void update(ECS_Registry &registry, float dt) override;
 
 
-		registry.view<FExplosion, FScale>().each([&, dt](auto entity, FExplosion & ex, FScale & scale) {
-			
-
-			scale.scale = FVector( (ex.LiveTime / ex.Duration)*ex.MaxScale);		
-			
-		});
-
-
-	}
+	SystemTaskGraph* schedule(ECS_Registry& registry) override;
 };
 
 struct SpaceshipSystem :public System {
 	
 
-	void update(ECS_Registry &registry, float dt) override
-	{
-		assert(OwnerActor);
-		SCOPE_CYCLE_COUNTER(STAT_Explosion);
+	void update(ECS_Registry &registry, float dt) override;
 
-
-		registry.view<FSpaceship, FRotationComponent,FVelocity>().each([&, dt](auto entity, FSpaceship & ship, FRotationComponent & rotation, FVelocity&vel) {
-
-			rotation.rot = vel.vel.Rotation().Quaternion();
-			//scale.scale = FVector((ex.LiveTime / ex.Duration)*ex.MaxScale);
-
-		});
-
-
-	}
+	SystemTaskGraph* schedule(ECS_Registry& registry) override;
 };
 
 
@@ -163,237 +129,12 @@ struct BoidSystem :public System {
 		}
 	}
 
-	void update(ECS_Registry &registry, float dt) override
-	{
+	void update(ECS_Registry &registry, float dt) override;
 
-		//add everything to the gridmap
-		GridMap.Empty(50);
+	void UpdateAllBoids(ECS_Registry& registry, float dt);
 
-		auto GridView = registry.view<FGridMap, FPosition>();
-
-		{
-			SCOPE_CYCLE_COUNTER(STAT_GridmapUpdate);
-			for (auto e : GridView)
-			{
-
-				EntityHandle handle(e);
-
-				AddToGridmap(handle, GridView.get<FPosition>(e));
-			}
-		}
-		
-
-		{
-			SCOPE_CYCLE_COUNTER(STAT_Boids);
-
-			TypedLinearMemory<ProjectileData> ProjArray(World->ScratchPad);
-
-			auto ProjectileView = registry.view<FProjectile, FPosition, FVelocity, FFaction>(entt::persistent_t{});
-			//ProjArray.Reset();
-			unsigned int NumProjectiles = 0;
-			//copy projectile data into array so we can do a parallel update later
-			for (auto e : ProjectileView)
-			{
-				ProjectileData Projectile;
-				Projectile.faction = ProjectileView.get<FFaction>(e);
-				Projectile.pos = ProjectileView.get<FPosition>(e);
-				Projectile.proj = ProjectileView.get<FProjectile>(e);
-
-				Projectile.vel = &ProjectileView.get<FVelocity>(e);
-				ProjArray.push_back(Projectile);
-				NumProjectiles++;
-				//ProjArray.Add(Projectile);
-			}
+	void UpdateGridmap(ECS_Registry& registry);
 
 
-			ParallelFor(NumProjectiles, [&](int32 Index)
-			{
-				ProjectileData data = ProjArray[Index];
-
-				//unpack projectile data
-				const FVector ProjPosition = data.pos.pos;
-				const EFaction ProjFaction = data.faction.faction;
-				const float ProjSeekStrenght = data.proj.HeatSeekStrenght;
-				const float ProjMaxVelocity = data.proj.MaxVelocity;
-				FVector & ProjVelocity = data.vel->vel;
-
-
-				const float ProjCheckRadius = 1000;
-				Foreach_EntitiesInRadius(ProjCheckRadius, ProjPosition, [&](GridItem &item) {
-
-					if (item.Faction != ProjFaction)
-					{
-						const FVector TestPosition = item.Position;
-
-						const float DistSquared = FVector::DistSquared(TestPosition, ProjPosition);
-
-						const float AvoidanceDistance = ProjCheckRadius * ProjCheckRadius;
-						const float DistStrenght = FMath::Clamp(1.0 - (DistSquared / (AvoidanceDistance)), 0.1, 1.0) * dt;
-						const FVector AvoidanceDirection = TestPosition - ProjPosition;
-
-						ProjVelocity += (AvoidanceDirection.GetSafeNormal() * ProjSeekStrenght*DistStrenght);
-					}
-				});
-
-				ProjVelocity = ProjVelocity.GetClampedToMaxSize(ProjMaxVelocity);
-			});
-
-		}
-		//its not good to have both spaceship and projectile logic here, they should be on their own systems
-		{
-			SCOPE_CYCLE_COUNTER(STAT_Boids);
-
-
-			//auto spaceshipEnd = SpaceshipView.size()
-			
-			//int nShips = registry.view<FSpaceship>().size();
-			auto SpaceshipView = registry.view<FSpaceship, FPosition, FVelocity, FFaction>(entt::persistent_t{});
-
-			TypedLinearMemory<SpaceshipData> SpaceshipArray(World->ScratchPad);
-			unsigned int NumShips = 0;
-			//SpaceshipArray.Reset();// Spaces//nShips);
-			//copy spaceship data into array so we can do a paralle update later
-			for (auto e : SpaceshipView)
-			{
-				SpaceshipData Ship;
-				Ship.faction = SpaceshipView.get<FFaction>(e);
-				Ship.pos = SpaceshipView.get<FPosition>(e);
-				Ship.ship = SpaceshipView.get<FSpaceship>(e);
-
-				Ship.vel = &SpaceshipView.get<FVelocity>(e);
-				NumShips++;
-				SpaceshipArray.push_back(Ship);
-				//SpaceshipArray.Add(Ship);
-			}
-
-			ParallelFor(NumShips, [&](int32 Index)
-			{
-				SpaceshipData data = SpaceshipArray[Index];
-
-				//unpack ship variables from the array
-				const FVector ShipPosition = data.pos.pos;
-				const EFaction ShipFaction = data.faction.faction;
-				const float ShipAvoidanceStrenght = data.ship.AvoidanceStrenght;
-				const float ShipMaxVelocity = data.ship.MaxVelocity;
-				FVector & ShipVelocity = data.vel->vel;
-				const FVector ShipTarget = data.ship.TargetMoveLocation;
-
-				const float shipCheckRadius = 1000;
-				Foreach_EntitiesInRadius(shipCheckRadius, ShipPosition, [&](GridItem& item) {
-
-					if (item.Faction == ShipFaction)
-					{
-						const FVector TestPosition = item.Position;
-
-						const float DistSquared = FVector::DistSquared(TestPosition, ShipPosition);
-
-						const float AvoidanceDistance = shipCheckRadius * shipCheckRadius;
-						const float DistStrenght = FMath::Clamp(1.0 - (DistSquared / (AvoidanceDistance)), 0.1, 1.0) * dt;
-						const FVector AvoidanceDirection = ShipPosition - TestPosition;
-
-						ShipVelocity += AvoidanceDirection.GetSafeNormal() * ShipAvoidanceStrenght*DistStrenght;
-					}
-				});
-
-				FVector ToTarget = ShipTarget - ShipPosition;
-				ToTarget.Normalize();
-
-				ShipVelocity += (ToTarget * 500 * dt);
-				ShipVelocity = ShipVelocity.GetClampedToMaxSize(ShipMaxVelocity);
-			});
-
-			
-		}
-
-		//int nProjectiles = registry.view<FProjectile>().size();
-
-
-		/*{
-			SCOPE_CYCLE_COUNTER(STAT_Boids);
-
-
-			//auto SpaceshipView = registry.view<FSpaceship, FPosition, FVelocity, FFaction>(entt::persistent_t{});
-			//
-			//auto SpaceshipBegin = SpaceshipView.begin();
-			//int Size = SpaceshipView.size();
-			//
-			//ProjArray.Reset(nProjectiles);
-
-			auto ProjectileView = registry.view<FProjectile, FPosition, FVelocity, FFaction>(entt::persistent_t{});
-
-			auto ProjectileBegin = ProjectileView.begin();
-			int Size = ProjectileView.size();
-			//copy projectile data into array so we can do a parallel update later
-			//for (auto e : ProjectileView)
-			//{
-				
-
-				//ProjArray.Add(Projectile);
-			//}
-
-			UE_LOG(LogFlying, Warning, TEXT("Num Projectiles: %s"), *FString::FromInt(Size));
-			ParallelFor(Size, [&](int32 Index)
-			{
-				auto e = ProjectileView.data()[Index];
-				//ProjectileData data = ProjArray[Index];
-			
-				ProjectileData data;
-				data.faction = ProjectileView.get<FFaction>(e);
-				data.pos = ProjectileView.get<FPosition>(e);
-				data.proj = ProjectileView.get<FProjectile>(e);
-			
-				data.vel = &ProjectileView.get<FVelocity>(e);
-			
-				//unpack projectile data
-				const FVector ProjPosition = data.pos.pos;
-				const EFaction ProjFaction = data.faction.faction;
-				const float ProjSeekStrenght = 10000;//data.proj.HeatSeekStrenght;
-				const float ProjMaxVelocity = data.proj.MaxVelocity;
-				FVector & ProjVelocity = data.vel->vel;
-			
-			
-				const float ProjCheckRadius = 10000;
-				Foreach_EntitiesInRadius(ProjCheckRadius, ProjPosition, [&](GridItem &item) {
-			
-					if (item.Faction != ProjFaction)
-					{
-						const FVector TestPosition = item.Position;
-			
-						const float DistSquared = FVector::DistSquared(TestPosition, ProjPosition);
-			
-						const float AvoidanceDistance = ProjCheckRadius * ProjCheckRadius;
-						const float DistStrenght = FMath::Clamp(1.0 - (DistSquared / (AvoidanceDistance)), 0.1, 1.0) * dt;
-						const FVector AvoidanceDirection = TestPosition - ProjPosition;
-			
-						ProjVelocity += (AvoidanceDirection.GetSafeNormal() * ProjSeekStrenght*DistStrenght);
-					}
-				});
-			
-				ProjVelocity = ProjVelocity.GetClampedToMaxSize(ProjMaxVelocity);
-			});
-
-		}
-		*/
-		
-		
-
-
-
-		
-		//Draw gridmap
-		const bool bDebugGridMap = false;
-		if (bDebugGridMap)
-		{
-			const float MaxUnits = 5.0;
-			for (auto& g : GridMap)
-			{
-				const FVector BoxMin = FVector(g.Key) * GRID_DIMENSION;
-				const FVector BoxMax = BoxMin + FVector(GRID_DIMENSION, GRID_DIMENSION, GRID_DIMENSION);
-				const FVector BoxCenter = BoxMin + FVector(GRID_DIMENSION, GRID_DIMENSION, GRID_DIMENSION) / 2.0;
-				const FColor BoxColor = FColor::MakeRedToGreenColorFromScalar(g.Value.Num() / MaxUnits);
-				DrawDebugBox(OwnerActor->GetWorld(), BoxCenter, FVector(GRID_DIMENSION, GRID_DIMENSION, GRID_DIMENSION) / 2.0, BoxColor);
-			}
-		}
-
-	}
+	SystemTaskGraph* schedule(ECS_Registry& registry) override;
 };

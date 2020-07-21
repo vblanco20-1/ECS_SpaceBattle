@@ -21,18 +21,24 @@ struct EntityHandle {
 	EntityID handle;
 };
 
+class SystemTaskGraph;
+
 struct System {
 
-	AActor * OwnerActor;
-	ECS_World * World;
-
+	AActor* OwnerActor;
+	ECS_World* World;
+	FString name;
 	virtual ~System() {}
-	virtual void initialize(AActor * _Owner, ECS_World * _World) {
+	virtual void initialize(AActor* _Owner, ECS_World* _World) {
 		OwnerActor = _Owner;
 		World = _World;
 	};
-	virtual void update(ECS_Registry &registry, float dt) = 0;
+	virtual void update(ECS_Registry& registry, float dt) = 0;
 
+	virtual SystemTaskGraph* schedule(ECS_Registry& registry)
+	{
+		return nullptr;
+	};
 };
 
 
@@ -65,8 +71,10 @@ public:
 	System* CreateAndRegisterSystem(FString name)
 	{
 		System * s = new T();
+		
 		if (s)
 		{
+			s->name = name;
 			systems.push_back(s);
 			namedSystems.Add(name, s);
 		}
@@ -96,7 +104,7 @@ public:
 
 	LinearMemory ScratchPad;
 
-protected:
+public:
 
 	AActor * Owner;
 
