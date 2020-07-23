@@ -18,7 +18,7 @@ struct ExplosionSystem :public System {
 	void update(ECS_Registry &registry, float dt) override;
 
 
-	SystemTaskGraph* schedule(ECS_Registry& registry) override;
+	void schedule(ECSSystemScheduler* sysScheduler) override;
 };
 
 struct SpaceshipSystem :public System {
@@ -26,7 +26,7 @@ struct SpaceshipSystem :public System {
 
 	void update(ECS_Registry &registry, float dt) override;
 
-	SystemTaskGraph* schedule(ECS_Registry& registry) override;
+	void schedule(ECSSystemScheduler* sysScheduler) override;
 };
 
 
@@ -136,5 +136,5 @@ struct BoidSystem :public System {
 	void UpdateGridmap(ECS_Registry& registry);
 
 
-	SystemTaskGraph* schedule(ECS_Registry& registry) override;
+	void schedule(ECSSystemScheduler* sysScheduler) override;
 };

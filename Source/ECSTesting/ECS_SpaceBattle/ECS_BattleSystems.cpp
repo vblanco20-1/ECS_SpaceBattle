@@ -16,7 +16,7 @@ void SpaceshipSystem::update(ECS_Registry& registry, float dt)
 		});
 }
 
-SystemTaskGraph* SpaceshipSystem::schedule(ECS_Registry& registry)
+void SpaceshipSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder(this->name, 400);
 
@@ -32,7 +32,7 @@ SystemTaskGraph* SpaceshipSystem::schedule(ECS_Registry& registry)
 		}
 	);
 
-	return builder.FinishGraph();
+	sysScheduler->AddTaskgraph(builder.FinishGraph());
 }
 
 void BoidSystem::update(ECS_Registry& registry, float dt)
@@ -200,7 +200,7 @@ void BoidSystem::UpdateGridmap(ECS_Registry& registry)
 	}
 }
 
-SystemTaskGraph* BoidSystem::schedule(ECS_Registry& registry)
+void BoidSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder(this->name,200);
 
@@ -221,7 +221,7 @@ SystemTaskGraph* BoidSystem::schedule(ECS_Registry& registry)
 		}
 	);
 
-	return builder.FinishGraph();
+	sysScheduler->AddTaskgraph(builder.FinishGraph());
 }
 
 void ExplosionSystem::update(ECS_Registry& registry, float dt)
@@ -236,7 +236,7 @@ void ExplosionSystem::update(ECS_Registry& registry, float dt)
 		ex.LiveTime += dt;
 		if (ex.LiveTime > ex.Duration)
 		{
-			registry.assign<FDestroy>(e);
+			//registry.assign<FDestroy>(e);
 		}
 	}
 
@@ -249,18 +249,23 @@ void ExplosionSystem::update(ECS_Registry& registry, float dt)
 		});
 }
 
-SystemTaskGraph* ExplosionSystem::schedule(ECS_Registry& registry)
+void ExplosionSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 300);
+	SystemTaskBuilder builder(this->name, 200000);
 
 	float dt = 1.0 / 60.f;
 	TaskDependencies deps1;
 
-	deps1.AddWrite < FDestroy > ();
+	//deps1.AddWrite < FDestroy > ();
 	deps1.AddWrite < FExplosion > ();
-	builder.AddGameTask(deps1,
+	//builder.AddGameTask(deps1,
+	builder.AddSyncTask(//deps1,
 		[=](ECS_Registry& reg) {
 			SCOPE_CYCLE_COUNTER(STAT_Explosion);
+
+
+			DeletionContext* del = DeletionContext::GetFromRegistry(reg);
+
 
 			auto AllExplosionsView = reg.view<FExplosion>();
 			for (auto e : AllExplosionsView) {
@@ -269,7 +274,9 @@ SystemTaskGraph* ExplosionSystem::schedule(ECS_Registry& registry)
 				ex.LiveTime += dt;
 				if (ex.LiveTime > ex.Duration)
 				{
-					reg.assign<FDestroy>(e);
+
+					del->AddToQueue(e);
+					//reg.accommodate<FDestroy>(e);
 				}
 			}
 		}
@@ -289,5 +296,5 @@ SystemTaskGraph* ExplosionSystem::schedule(ECS_Registry& registry)
 		}
 	);
 
-	return builder.FinishGraph();
+	sysScheduler->AddTaskgraph(builder.FinishGraph());
 }

@@ -181,10 +181,10 @@ struct FLifetime {
 	float LifeLeft;
 };
 
-struct FDestroy
-{
-
-};
+//struct FDestroy
+//{
+//
+//};
 
 USTRUCT(BlueprintType)
 struct FCopyTransformToECS {
@@ -228,7 +228,8 @@ struct FArchetypeSpawner {
 		float SpawnRate;
 	UPROPERTY(EditAnywhere, Category = ECS)
 		bool bLoopSpawn;
-
+	UPROPERTY(EditAnywhere, Category = ECS)
+	int Canary;
 };
 
 
@@ -403,6 +404,7 @@ public:
 	UECS_ArchetypeSpawnerComponentWrapper() { PrimaryComponentTick.bCanEverTick = false; };
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
+		Value.Canary = 420;
 		world->GetRegistry()->accommodate<FArchetypeSpawner>(entity.handle, Value);
 	};
 

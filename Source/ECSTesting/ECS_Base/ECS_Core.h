@@ -1,8 +1,10 @@
 #pragma once
 
 
-#include "entt/entt.hpp"
+//#include "entt/entt.hpp"
 
+#include "entt/entity/registry.hpp"
+#include "concurrentqueue.h"
 #include <vector>
 #include "ECSTesting.h"
 #include "LinearMemory.h"
@@ -11,8 +13,8 @@
 DECLARE_CYCLE_STAT(TEXT("ECS: Total System Update"), STAT_TotalUpdate, STATGROUP_ECS);
 
 
-using EntityID = std::uint64_t;
-using ECS_Registry = entt::Registry<std::uint64_t>;
+using EntityID = uint32_t;
+using ECS_Registry = entt::Registry<EntityID>;
 class ECS_World;
 class AActor;
 
@@ -35,12 +37,38 @@ struct System {
 	};
 	virtual void update(ECS_Registry& registry, float dt) = 0;
 
-	virtual SystemTaskGraph* schedule(ECS_Registry& registry)
+	virtual void schedule(class ECSSystemScheduler* sysScheduler)
 	{
-		return nullptr;
+		
 	};
 };
 
+struct DeletionContext {
+	moodycamel::ConcurrentQueue<EntityID> entitiesToDelete;
+
+	static DeletionContext* GetFromRegistry(ECS_Registry& registry);
+	void AddToQueue(EntityID entity);
+};
+
+template<typename T, typename Traits, typename F>
+void bulk_dequeue(moodycamel::ConcurrentQueue<T, Traits>& queue, F&& fun) {
+	T block[Traits::BLOCK_SIZE];
+	while (true)
+	{
+		int dequeued = queue.try_dequeue_bulk(block, Traits::BLOCK_SIZE);
+		if (dequeued > 0)
+		{
+			for (int i = 0; i < dequeued; i++)
+			{
+				fun(block[i]);
+			}
+		}
+		else
+		{
+			return;
+		}
+	}
+};
 
 class ECS_World {
 public:

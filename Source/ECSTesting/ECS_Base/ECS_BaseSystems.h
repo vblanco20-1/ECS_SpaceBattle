@@ -18,7 +18,7 @@ struct DebugDrawSystem :public System {
 	void update(ECS_Registry &registry, float dt) override;
 
 
-	SystemTaskGraph* schedule(ECS_Registry& registry) override;
+	void schedule(ECSSystemScheduler* sysScheduler) override;
 
 };
 
@@ -29,7 +29,7 @@ struct MovementSystem :public System {
 	void update(ECS_Registry &registry, float dt) override;
 
 
-	SystemTaskGraph* schedule(ECS_Registry& registry) override;
+	void schedule(ECSSystemScheduler* sysScheduler) override;
 
 };
 
@@ -40,7 +40,7 @@ struct CopyTransformToECSSystem :public System {
 	void update(ECS_Registry &registry, float dt) override;
 
 
-	SystemTaskGraph* schedule(ECS_Registry& registry) override;
+	void schedule(ECSSystemScheduler* sysScheduler) override;
 
 };
 DECLARE_CYCLE_STAT(TEXT("ECS: Copy Transform To Actor"), STAT_CopyTransformActor, STATGROUP_ECS);
@@ -51,8 +51,7 @@ struct CopyTransformToActorSystem :public System {
 	void update(ECS_Registry &registry, float dt) override;
 
 
-	SystemTaskGraph* schedule(ECS_Registry& registry) override;
-
+	void schedule(ECSSystemScheduler* sysScheduler) override;
 };
 
 DECLARE_CYCLE_STAT(TEXT("ECS: Spanwer System"), STAT_ECSSpawn, STATGROUP_ECS);
@@ -65,7 +64,7 @@ struct ArchetypeSpawnerSystem :public System {
 	void update(ECS_Registry &registry, float dt) override;
 
 
-	SystemTaskGraph* schedule(ECS_Registry& registry) override;
+	void schedule(ECSSystemScheduler* sysScheduler) override;
 
 };
 
@@ -96,8 +95,7 @@ public:
 	void update(ECS_Registry &registry,float dt) override;
 
 
-	SystemTaskGraph* schedule(ECS_Registry& registry) override;
-
+	void schedule(ECSSystemScheduler* sysScheduler) override;
 };
 
 DECLARE_CYCLE_STAT(TEXT("ECS: Raycast System"), STAT_ECSRaycast, STATGROUP_ECS);
@@ -109,7 +107,7 @@ struct RaycastSystem :public System {
 
 	void CreateExplosion(ECS_Registry& registry, EntityID entity, FVector ExplosionPoint);
 
-	SystemTaskGraph* schedule(ECS_Registry& registry) override;
+	void schedule(ECSSystemScheduler* sysScheduler) override;
 
 	struct ExplosionStr {
 		EntityID et;
@@ -121,8 +119,9 @@ struct RaycastSystem :public System {
 DECLARE_CYCLE_STAT(TEXT("ECS: Lifetime System"), STAT_Lifetime, STATGROUP_ECS);
 struct LifetimeSystem :public System {
 
-	void update(ECS_Registry &registry, float dt) override;
-	SystemTaskGraph* schedule(ECS_Registry& registry) override;
+	static constexpr int DeletionSync = 200000;
 
+	void update(ECS_Registry &registry, float dt) override;
+	void schedule(ECSSystemScheduler* sysScheduler) override;
 	
 };

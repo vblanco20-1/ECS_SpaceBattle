@@ -64,19 +64,14 @@ void A_ECSWorldActor::Tick(float DeltaTime)
 
 	SCOPE_CYCLE_COUNTER(STAT_TotalUpdate);
 
-	TArray<SystemTaskGraph*> systasks;
-
-	for(auto sys : ECSWorld->systems){
-		SystemTaskGraph* s = sys->schedule(ECSWorld->registry);
-		assert(s);
-		//if (s) {
-			systasks.Add(s);
-		//}
-	}
+	
 
 	ECSSystemScheduler* sched = new ECSSystemScheduler();
+	sched->registry = &ECSWorld->registry;
 
-	sched->systasks = systasks;
+	for(auto sys : ECSWorld->systems){
+		 sys->schedule(sched);		
+	}
 
 	sched->Run(ECSCVars::EnableParallel == 1,ECSWorld->registry);
 }

@@ -182,6 +182,9 @@ class ECSSystemScheduler {
 public:
 	TArray<SystemTaskGraph*> systasks;
 	ECS_Registry* registry;
+	
+	void AddTaskgraph(SystemTaskGraph* newGraph);
+	
 	void Run(bool runParallel, ECS_Registry& reg);
 
 	void AsyncFinished(SystemTask* task);

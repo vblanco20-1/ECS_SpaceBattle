@@ -123,7 +123,7 @@ void StaticMeshDrawSystem::update(ECS_Registry &registry, float dt)
 
 }
 
-SystemTaskGraph* StaticMeshDrawSystem::schedule(ECS_Registry& registry)
+void  StaticMeshDrawSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder(this->name, 1500);
 
@@ -227,7 +227,7 @@ SystemTaskGraph* StaticMeshDrawSystem::schedule(ECS_Registry& registry)
 		);
 	}
 
-	return builder.FinishGraph();
+	sysScheduler->AddTaskgraph(builder.FinishGraph());
 }
 
 EntityHandle ArchetypeSpawnerSystem::SpawnFromArchetype(ECS_Registry& registry, TSubclassOf<AECS_Archetype>& ArchetypeClass)
@@ -346,31 +346,32 @@ void ArchetypeSpawnerSystem::update(ECS_Registry &registry, float dt)
 		}
 	}		
 }
-
-SystemTaskGraph* ArchetypeSpawnerSystem::schedule(ECS_Registry& registry)
+PRAGMA_DISABLE_OPTIMIZATION
+void ArchetypeSpawnerSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder(this->name, 1000000);
 	float dt = 1.0 / 60.0;
 	
-		TaskDependencies deps;
+	TaskDependencies deps;
 
-		deps.AddWrite<FArchetypeSpawner>();
+	deps.AddWrite<FArchetypeSpawner>();
 
-		builder.AddTask(TaskDependencies{}, [=](ECS_Registry& reg) {
+	builder.AddTask(TaskDependencies{}, [=](ECS_Registry& reg) {
 
-			SCOPE_CYCLE_COUNTER(STAT_ECSSpawn);
+		SCOPE_CYCLE_COUNTER(STAT_ECSSpawn);
 
-			//exclusively update timing
-			auto SpawnerView = reg.view<FArchetypeSpawner>();
-			for (auto e : SpawnerView)
-			{
-				SpawnerView.get(e).TimeUntilSpawn -= dt;
-			}
-		});
+		//exclusively update timing
+		auto SpawnerView = reg.view<FArchetypeSpawner>();
+		for (auto e : SpawnerView)
+		{
+			SpawnerView.get(e).TimeUntilSpawn -= dt;
+		}
+	});
 	
 
 	builder.AddSyncTask(
 		[=](ECS_Registry& reg) {
+			//return;
 			SCOPE_CYCLE_COUNTER(STAT_ECSSpawn);
 		//spawn from arc and actortransform
 		auto SpawnerArcView = reg.view<FArchetypeSpawner, FRandomArcSpawn, FActorTransform>();
@@ -415,15 +416,19 @@ SystemTaskGraph* ArchetypeSpawnerSystem::schedule(ECS_Registry& registry)
 		}
 
 		//Spawn with basic position
-		auto SpawnerPositionView = reg.view<FArchetypeSpawner, FPosition>();
+		auto SpawnerPositionView = reg.view<FArchetypeSpawner>();
 		for (auto e : SpawnerPositionView)
 		{
-			const FVector& SpawnPosition = SpawnerPositionView.get<FPosition>(e).pos;
-			FArchetypeSpawner& spawner = SpawnerPositionView.get<FArchetypeSpawner>(e);
+			assert(reg.has<FArchetypeSpawner>(e));
+			assert(reg.has<FPosition>(e));
 
+			const FVector& SpawnPosition = reg.get<FPosition>(e).pos;
+			FArchetypeSpawner& spawner = reg.get<FArchetypeSpawner>(e);
+
+			
 			if (spawner.TimeUntilSpawn < 0)
 			{
-				if (spawner.ArchetypeClass)
+				if (IsValid(spawner.ArchetypeClass))
 				{
 					EntityHandle h = SpawnFromArchetype(reg, spawner.ArchetypeClass);
 					reg.accommodate<FPosition>(h.handle, SpawnPosition);
@@ -442,9 +447,9 @@ SystemTaskGraph* ArchetypeSpawnerSystem::schedule(ECS_Registry& registry)
 		}
 	);
 
-	return builder.FinishGraph();
+	sysScheduler->AddTaskgraph(builder.FinishGraph());
 }
-
+PRAGMA_ENABLE_OPTIMIZATION
 void RaycastSystem::update(ECS_Registry &registry, float dt)
 {
 	assert(OwnerActor);
@@ -485,16 +490,16 @@ void RaycastSystem::CheckRaycasts(ECS_Registry& registry, float dt, UWorld* Game
 				//it actually hit
 				if (tdata.OutHits[0].bBlockingHit)
 				{
-					//if its an actor, try to damage it. 
-					AActor* act = tdata.OutHits[0].GetActor();
-					if (act)
-					{
-						auto hcmp = act->FindComponentByClass<UECS_HealthComponentWrapper>();
-						if (hcmp)
-						{
-							hcmp->OnDamaged.Broadcast(99.0);
-						}
-					}
+					////if its an actor, try to damage it. 
+					//AActor* act = tdata.OutHits[0].GetActor();
+					//if (act)
+					//{
+					//	auto hcmp = act->FindComponentByClass<UECS_HealthComponentWrapper>();
+					//	if (hcmp)
+					//	{
+					//		hcmp->OnDamaged.Broadcast(99.0);
+					//	}
+					//}
 
 					//if the entity was a projectile, create explosion and destroy it
 					if (registry.has<FProjectile>(entity))
@@ -528,14 +533,15 @@ void RaycastSystem::CreateExplosion(ECS_Registry& registry, EntityID entity, FVe
 		spawn.ArchetypeClass = explosionclass;
 		spawn.SpawnRate = 1;
 		spawn.TimeUntilSpawn = 0.0;
+		spawn.Canary = 69;
 	}
 
-	registry.accommodate<FDestroy>(entity);
+	//registry.accommodate<FDestroy>(entity);
 }
 
 DECLARE_CYCLE_STAT(TEXT("ECS: Raycast Explosions"), STAT_RaycastExplosions, STATGROUP_ECS);
 DECLARE_CYCLE_STAT(TEXT("ECS: Raycast Enqueue"), STAT_RaycastResults, STATGROUP_ECS);
-SystemTaskGraph* RaycastSystem::schedule(ECS_Registry& registry)
+void  RaycastSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder(this->name, 999);
 
@@ -544,25 +550,14 @@ SystemTaskGraph* RaycastSystem::schedule(ECS_Registry& registry)
 	deps1.AddRead<FRaycastResult>();
 
 	//builder.AddGameTask(deps,
-	builder.AddGameTask(deps1, [=](ECS_Registry& reg) {
+	builder.AddTask(deps1, [=](ECS_Registry& reg) {
 
 		SCOPE_CYCLE_COUNTER(STAT_ECSRaycast);
 		UWorld* GameWorld = OwnerActor->GetWorld();
 		this->CheckRaycasts(reg, dt,GameWorld);
 	});
 
-	builder.AddSyncTask(
-		[=](ECS_Registry& reg) {
-			SCOPE_CYCLE_COUNTER(STAT_RaycastExplosions);
-
-			for (auto& ex : explosions) {
-			
-				CreateExplosion(reg, ex.et, ex.explosionPoint);
-			}
-
-			explosions.Empty();
-		}
-	);
+	
 	TaskDependencies deps2;
 
 	deps2.AddWrite< FRaycastResult >();
@@ -570,8 +565,8 @@ SystemTaskGraph* RaycastSystem::schedule(ECS_Registry& registry)
 	deps2.AddRead<FPosition>();
 	deps2.AddRead<FLastPosition>();
 
-	builder.AddGameTask(deps2,[=](ECS_Registry& reg) {
-	//builder.AddSyncTask(/*deps2,*/ [=](ECS_Registry& reg) {
+	//builder.AddGameTask(deps2,[=](ECS_Registry& reg) {
+	builder.AddSyncTask(/*deps2,*/ [=](ECS_Registry& reg) {
 		SCOPE_CYCLE_COUNTER(STAT_RaycastResults);
 
 		UWorld* GameWorld = OwnerActor->GetWorld();
@@ -587,7 +582,30 @@ SystemTaskGraph* RaycastSystem::schedule(ECS_Registry& registry)
 		});
 	});
 
-	return builder.FinishGraph();
+	sysScheduler->AddTaskgraph(builder.FinishGraph());
+		
+	SystemTaskBuilder builder2("raycast system: makeExplosions", LifetimeSystem::DeletionSync);
+	builder2.AddSyncTask(
+		[=](ECS_Registry& reg) {
+
+			SCOPE_CYCLE_COUNTER(STAT_RaycastExplosions);
+
+			DeletionContext* del = DeletionContext::GetFromRegistry(reg);
+
+			for (auto& ex : explosions) {
+
+				if (reg.has<FProjectile>(ex.et))
+				{
+					CreateExplosion(reg, ex.et, ex.explosionPoint);					
+				}
+				del->AddToQueue(ex.et);
+			}
+
+			explosions.Empty();
+		}
+	);
+
+	sysScheduler->AddTaskgraph(builder2.FinishGraph());
 }
 
 void LifetimeSystem::update(ECS_Registry& registry, float dt)
@@ -596,34 +614,36 @@ void LifetimeSystem::update(ECS_Registry& registry, float dt)
 
 	SCOPE_CYCLE_COUNTER(STAT_Lifetime);
 
-	//tick the lifetime timers
-	auto LifetimeView = registry.view<FLifetime>();
-	for (auto e : LifetimeView)
-	{
-		auto& Deleter = LifetimeView.get(e);
-
-		Deleter.LifeLeft -= dt;
-		if (Deleter.LifeLeft < 0)
-		{
-			//add a Destroy component so it gets deleted
-			registry.accommodate<FDestroy>(e);
-		}
-	}
-
-	//logic can be done here for custom deleters, nothing right now
-
-
-	//delete everything with a FDestroy component
-	auto DeleteView = registry.view<FDestroy>();
-	for (auto e : DeleteView)
-	{
-		registry.destroy(e);
-	}
+	////tick the lifetime timers
+	//auto LifetimeView = registry.view<FLifetime>();
+	//for (auto e : LifetimeView)
+	//{
+	//	auto& Deleter = LifetimeView.get(e);
+	//
+	//	Deleter.LifeLeft -= dt;
+	//	if (Deleter.LifeLeft < 0)
+	//	{
+	//		//add a Destroy component so it gets deleted
+	//		registry.accommodate<FDestroy>(e);
+	//	}
+	//}
+	//
+	////logic can be done here for custom deleters, nothing right now
+	//
+	//
+	////delete everything with a FDestroy component
+	//auto DeleteView = registry.view<FDestroy>();
+	//for (auto e : DeleteView)
+	//{
+	//	registry.destroy(e);
+	//}
 }
 
-SystemTaskGraph* LifetimeSystem::schedule(ECS_Registry& registry)
+void  LifetimeSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder("lifetime system", 100000);
+
+	DeletionContext::GetFromRegistry(*sysScheduler->registry);
 
 	TaskDependencies deps;
 	deps.AddWrite<FLifetime>();
@@ -631,6 +651,9 @@ SystemTaskGraph* LifetimeSystem::schedule(ECS_Registry& registry)
 	builder.AddTask(
 		deps,
 		[=](ECS_Registry& reg) {
+
+			DeletionContext* del = DeletionContext::GetFromRegistry(reg);
+
 			//tick the lifetime timers
 			auto LifetimeView = reg.view<FLifetime>();
 			for (auto e : LifetimeView)
@@ -638,35 +661,53 @@ SystemTaskGraph* LifetimeSystem::schedule(ECS_Registry& registry)
 				auto& Deleter = LifetimeView.get(e);
 
 				Deleter.LifeLeft -= 1.0/60.0;
-			}
-		}
-	);
 
-	builder.AddSyncTask(		
-		[=](ECS_Registry& reg) {
-			
-			auto LifetimeView = reg.view<FLifetime>();
-			for (auto e : LifetimeView)
-			{
-				auto& Deleter = LifetimeView.get(e);
-				
 				if (Deleter.LifeLeft < 0)
 				{
-					//destroy everything that has no life left
-					reg.destroy(e);
+					del->AddToQueue(e);
 				}
-			}
-
-			//delete everything with a FDestroy component
-			auto DeleteView = reg.view<FDestroy>();
-			for (auto e : DeleteView)
-			{
-				reg.destroy(e);
 			}
 		}
 	);
 
-	return builder.FinishGraph();
+	sysScheduler->AddTaskgraph(builder.FinishGraph());
+
+	SystemTaskBuilder builder2("lifetime system- Delete", LifetimeSystem::DeletionSync);
+	builder2.AddSyncTask(
+		[=](ECS_Registry& reg) {
+			
+			//auto LifetimeView = reg.view<FLifetime>();
+			//for (auto e : LifetimeView)
+			//{
+			//	auto& Deleter = LifetimeView.get(e);
+			//	
+			//	if (Deleter.LifeLeft < 0)
+			//	{
+			//		//destroy everything that has no life left
+			//		reg.destroy(e);
+			//	}
+			//}
+
+			DeletionContext* del = DeletionContext::GetFromRegistry(reg);
+
+			bulk_dequeue(del->entitiesToDelete, [&](EntityID id) {
+				if (reg.valid(id))
+				{
+					reg.destroy(id);
+				}
+			});
+
+
+			//delete everything with a FDestroy component
+			//auto DeleteView = reg.view<FDestroy>();
+			//for (auto e : DeleteView)
+			//{
+			//	reg.destroy(e);
+			//}
+		}
+	);
+
+	sysScheduler->AddTaskgraph(builder2.FinishGraph());
 }
 
 void CopyTransformToActorSystem::update(ECS_Registry& registry, float dt)
@@ -703,7 +744,7 @@ void CopyTransformToActorSystem::update(ECS_Registry& registry, float dt)
 	}
 }
 
-SystemTaskGraph* CopyTransformToActorSystem::schedule(ECS_Registry& registry)
+void  CopyTransformToActorSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder(this->name, 10000);
 
@@ -721,7 +762,7 @@ SystemTaskGraph* CopyTransformToActorSystem::schedule(ECS_Registry& registry)
 		}
 	);
 
-	return builder.FinishGraph();
+	sysScheduler->AddTaskgraph(builder.FinishGraph());
 }
 
 void CopyTransformToECSSystem::update(ECS_Registry& registry, float dt)
@@ -761,7 +802,7 @@ void CopyTransformToECSSystem::update(ECS_Registry& registry, float dt)
 #endif
 }
 
-SystemTaskGraph* CopyTransformToECSSystem::schedule(ECS_Registry& registry)
+void CopyTransformToECSSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder(this->name, 100);
 
@@ -820,7 +861,7 @@ SystemTaskGraph* CopyTransformToECSSystem::schedule(ECS_Registry& registry)
 			}
 	);
 
-	return builder.FinishGraph();
+	sysScheduler->AddTaskgraph(builder.FinishGraph());
 }
 
 void MovementSystem::update(ECS_Registry& registry, float dt)
@@ -845,7 +886,7 @@ void MovementSystem::update(ECS_Registry& registry, float dt)
 #endif
 }
 
-SystemTaskGraph* MovementSystem::schedule(ECS_Registry& registry)
+void  MovementSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder(this->name, 300);
 
@@ -877,7 +918,7 @@ SystemTaskGraph* MovementSystem::schedule(ECS_Registry& registry)
 		}
 	);
 
-	return builder.FinishGraph();
+	sysScheduler->AddTaskgraph(builder.FinishGraph());
 }
 
 void DebugDrawSystem::update(ECS_Registry& registry, float dt)
@@ -898,16 +939,20 @@ void DebugDrawSystem::update(ECS_Registry& registry, float dt)
 	});
 }
 
-SystemTaskGraph* DebugDrawSystem::schedule(ECS_Registry& registry)
+void  DebugDrawSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder(this->name, 10000);
 
+	TaskDependencies deps;
+	deps.AddRead<FPosition>();
+	
+	deps.AddRead<FDebugSphere>();
 
-	builder.AddSyncTask(
+	builder.AddGameTask(deps,
 		[=](ECS_Registry& reg) {
 			this->update(reg, 1.0 / 60.0);
 		}
 	);
 
-	return builder.FinishGraph();
+	sysScheduler->AddTaskgraph(builder.FinishGraph());
 }

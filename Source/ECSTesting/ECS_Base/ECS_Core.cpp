@@ -21,3 +21,18 @@ void ECS_World::UpdateSystem(FString name, float Dt)
 {
 	GetSystem(name)->update(registry, Dt);
 }
+
+DeletionContext* DeletionContext::GetFromRegistry(ECS_Registry& registry)
+{
+	if (registry.view<DeletionContext>().size() == 0) {
+		EntityID id = registry.create();
+		registry.assign<DeletionContext>(id);
+	}
+
+	return registry.view<DeletionContext>().raw();
+}
+
+void DeletionContext::AddToQueue(EntityID entity)
+{
+	entitiesToDelete.enqueue(entity);
+}

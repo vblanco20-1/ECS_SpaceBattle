@@ -20,6 +20,12 @@ SystemTask* nextTask(SystemTask* task) {
 	}
 	return nullptr;
 }
+
+void ECSSystemScheduler::AddTaskgraph(SystemTaskGraph* newGraph)
+{
+	this->systasks.Add(newGraph);
+}
+
 void ECSSystemScheduler::Run(bool runParallel, ECS_Registry& reg)
 {
 	registry = &reg;
@@ -150,30 +156,41 @@ void ECSSystemScheduler::Run(bool runParallel, ECS_Registry& reg)
 					}
 					
 				}
+				TArray<SystemTask*, TInlineAllocator<5>> executableTasks;
 
 				SystemTask* tsk = nullptr;
 				endmutex.Lock();
+
+			
 				if (waitingTasks.Num() != 0) {
 
 					for (int i = 0; i < waitingTasks.Num(); i++) {
 						if (CanExecute(waitingTasks[i])) {
 							tsk = waitingTasks[i];
 							waitingTasks.RemoveAt(i);
-							break;
+							executableTasks.Add(tsk);
+							i--;
+							//break;
 						}
 					}		
 				}
 				endmutex.Unlock();
 
-				if (tsk) {
-					if (!ExecuteTask(tsk)) {
-						//special case, the task we just attempted to execute has 
-					}
+				for (auto t : executableTasks) {
+					ExecuteTask(t);
 				}
-				else {
+				//if (tsk) {
+				//
+				//	if (!ExecuteTask(tsk)) {
+				//		//special case, the task we just attempted to execute has 
+				//	}
+				//}
+				//else 
+				{
 					//we ran out of stuff, wait a little bit
 					//endmutex.Lock();
 
+					endEvent->Wait();
 					//pendingTasks[0]->future.Wait();
 
 					//UE_LOG(LogFlying, Warning, TEXT("Post Wait Task"));
@@ -220,20 +237,39 @@ void ECSSystemScheduler::AsyncFinished(SystemTask* task)
 	{
 		SystemTask* tsk = nullptr;
 		endmutex.Lock();
+		TArray<SystemTask*, TInlineAllocator<5>> executableTasks;
 		if (waitingTasks.Num() != 0) {
+
 			for (int i = 0; i < waitingTasks.Num(); i++) {
 				if (CanExecute(waitingTasks[i])) {
 					tsk = waitingTasks[i];
 					waitingTasks.RemoveAt(i);
-					break;
+					executableTasks.Add(tsk);
+					i--;
+					//break;
 				}
 			}
 		}
 		endmutex.Unlock();
 
-		if (tsk) {
-			ExecuteTask(tsk);
-		}	
+		for (auto t : executableTasks) {
+			ExecuteTask(t);
+		}
+
+		//if (waitingTasks.Num() != 0) {
+		//	for (int i = 0; i < waitingTasks.Num(); i++) {
+		//		if (CanExecute(waitingTasks[i])) {
+		//			tsk = waitingTasks[i];
+		//			waitingTasks.RemoveAt(i);
+		//			break;
+		//		}
+		//	}
+		//}
+		//endmutex.Unlock();
+		//
+		//if (tsk) {
+		//	ExecuteTask(tsk);
+		//}	
 
 	}
 	//if (task->next) {
