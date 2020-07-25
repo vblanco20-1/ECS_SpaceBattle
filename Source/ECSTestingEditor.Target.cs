@@ -6,8 +6,10 @@ using System.Collections.Generic;
 public class ECSTestingEditorTarget : TargetRules
 {
 	public ECSTestingEditorTarget(TargetInfo Target) : base(Target)
-	{
-		Type = TargetType.Editor;
+    {
+       
+        Type = TargetType.Editor;
 		ExtraModuleNames.Add("ECSTesting");
+		
 	}
 }

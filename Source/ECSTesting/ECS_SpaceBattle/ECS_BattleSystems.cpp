@@ -18,7 +18,7 @@ void SpaceshipSystem::update(ECS_Registry& registry, float dt)
 
 void SpaceshipSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 400);
+	SystemTaskBuilder builder(this->name, 400, sysScheduler);
 
 	TaskDependencies deps;
 
@@ -26,6 +26,7 @@ void SpaceshipSystem::schedule(ECSSystemScheduler* sysScheduler)
 	deps.AddRead < FSpaceship > ();
 	deps.AddRead < FVelocity > ();
 
+	builder.AddDependency("Boids");
 	builder.AddTask(deps,
 		[=](ECS_Registry& reg) {
 			this->update(reg, 1.0 / 60.0);
@@ -202,12 +203,13 @@ void BoidSystem::UpdateGridmap(ECS_Registry& registry)
 
 void BoidSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name,200);
+	SystemTaskBuilder builder(this->name,200,sysScheduler);
 
 
 	TaskDependencies deps1;
 	deps1.AddRead < FPosition >();
 	deps1.AddWrite < FGridMap >();
+
 	builder.AddTask(deps1,
 		[=](ECS_Registry& reg) {
 			UpdateGridmap(reg);
@@ -215,11 +217,24 @@ void BoidSystem::schedule(ECSSystemScheduler* sysScheduler)
 	});
 	
 
-	builder.AddSyncTask(
+	TaskDependencies deps2;
+	deps2.AddWrite < FVelocity >();
+	deps2.AddRead < FGridMap >();	
+	deps2.AddRead < FSpaceship>();
+	deps2.AddWrite <FPosition >();
+	deps2.AddRead < FProjectile>();
+	//builder.AddSyncTask(
+	builder.AddTask(deps2,
 		[=](ECS_Registry& reg) {
 			UpdateAllBoids(reg, 1.0/60.0);
 		}
 	);
+
+	builder.AddDependency("CopyTransform");
+	////block everything past boids for good logic
+	//builder.AddSyncTask([](ECS_Registry& reg) {
+	//	
+	//});
 
 	sysScheduler->AddTaskgraph(builder.FinishGraph());
 }
@@ -251,7 +266,7 @@ void ExplosionSystem::update(ECS_Registry& registry, float dt)
 
 void ExplosionSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 200000);
+	SystemTaskBuilder builder(this->name, 200000, sysScheduler);
 
 	float dt = 1.0 / 60.f;
 	TaskDependencies deps1;
@@ -276,7 +291,6 @@ void ExplosionSystem::schedule(ECSSystemScheduler* sysScheduler)
 				{
 
 					del->AddToQueue(e);
-					//reg.accommodate<FDestroy>(e);
 				}
 			}
 		}

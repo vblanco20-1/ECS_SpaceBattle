@@ -6,11 +6,11 @@ using System.Collections.Generic;
 public class ECSTestingTarget : TargetRules
 {
 	public ECSTestingTarget(TargetInfo Target) : base(Target)
-	{
-		Type = TargetType.Game;
+    {
+        Type = TargetType.Game;
 		ExtraModuleNames.Add("ECSTesting");
 
-
+		
 
 	}
 }

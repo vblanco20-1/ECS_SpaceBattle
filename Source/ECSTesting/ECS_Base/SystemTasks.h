@@ -88,27 +88,62 @@ enum class ESysTaskType : uint8_t {
 	FreeTask
 };
 
+enum class ESysTaskFlags : uint32_t {
+	ExecuteAsync = 1 << 0,
+	ExecuteGameThread = 1 << 1,
+	HighPriority = 1 << 2
+};
+
 struct SystemTask {
 	ESysTaskType type;
+	ESysTaskFlags flags;
 	TaskDependencies deps;
 	SystemTask* next = nullptr;
-	class SystemTaskGraph* ownerGraph{nullptr};
+	
+	class SystemTaskChain* ownerGraph{nullptr};
 	TFunction<void(ECS_Registry&)> function;
 };
 
+struct GraphTask {
+	SystemTask* original;
+	FString TaskName;
+	int chainIndex = 0;
 
-class SystemTaskGraph {
+	int predecessorCount = 1;
+	TArray<GraphTask*, TInlineAllocator<2>> successors;
+
+	void AddSuccesor(GraphTask* succesor) {
+		succesor->predecessorCount++;
+		successors.Add(succesor);
+	}
+	void BuildName();
+};
+
+class SystemTaskChain {
 public:
-	SystemTaskGraph* next{nullptr};
+	SystemTaskChain* next{nullptr};
 	SystemTask* firstTask{ nullptr };
 	SystemTask* lastTask{ nullptr };
 	int sortKey;
 	FString name;
+	TArray<FString, TInlineAllocator<2>> SystemDependencies;
+
+	bool HasSyncPoint() {
+		SystemTask* task = firstTask;
+		while (task)
+		{
+			if (task->type == ESysTaskType::SyncPoint) {
+				return true;
+			}
+			task = task->next;
+		}
+		return false;
+	}
 
 	void ExecuteSync(ECS_Registry& reg) {
-
 		SystemTask* task = firstTask;
-		while (task) {
+		while (task)
+		{
 			task->function(reg);
 			task = task->next;
 		}
@@ -129,19 +164,21 @@ public:
 
 class SystemTaskBuilder {
 public:
-	SystemTaskBuilder(FString name, int sortkey) {
+	SystemTaskBuilder(FString name, int sortkey, class ECSSystemScheduler* _scheduler) {
 	
-		graph = new SystemTaskGraph();
+		graph = new SystemTaskChain();
 		graph->name = name;
 		graph->sortKey = sortkey;
+		scheduler = _scheduler;
 	};
 	
 	template< typename C>
-	void AddTask(const TaskDependencies& deps, C&& c) { 
-		SystemTask* task = new SystemTask();
+	void AddTask(const TaskDependencies& deps, C&& c , ESysTaskFlags flags = ESysTaskFlags::ExecuteAsync) {
+		SystemTask* task = scheduler->NewTask();
 		task->deps = deps;
 		task->function = std::move(c);
 		task->type = ESysTaskType::FreeTask;
+		task->flags = flags;
 		task->ownerGraph = graph;
 		graph->AddTask(task);
 		//graph->functions.Add(std::move(c)); 
@@ -149,48 +186,59 @@ public:
 
 	template< typename C>
 	void AddGameTask(const TaskDependencies& deps, C&& c) {
-		SystemTask* task = new SystemTask();
+		SystemTask* task = scheduler->NewTask();
 		task->deps = deps;
 		task->function = std::move(c);
 		task->type = ESysTaskType::GameThread;
+		task->flags = ESysTaskFlags::ExecuteGameThread;
 		task->ownerGraph = graph;
 		graph->AddTask(task);
 	};
 
+	void AddDependency(FString dependency) {
+		graph->SystemDependencies.Add(dependency);
+	}
+
 	template<typename C>
 	void AddSyncTask( C&& c) {
-		SystemTask* task = new SystemTask();		
+		SystemTask* task = scheduler->NewTask();//new SystemTask();		
 		task->function = std::move(c);
 		task->type = ESysTaskType::SyncPoint;
 		task->ownerGraph = graph;
 		graph->AddTask(task);
 	};
 
-	SystemTaskGraph* FinishGraph() { return graph; };
+	SystemTaskChain* FinishGraph() { return graph; };
 
-	SystemTaskGraph* graph;
+	SystemTaskChain* graph;
+	ECSSystemScheduler* scheduler{nullptr};
 };
 
 class ECSSystemScheduler {
 
 	struct LaunchedTask {
-		SystemTask* task;
+		GraphTask* task;
+		//SystemTask* task;
 		TaskDependencies dependencies;
 		TFuture<void> future;
 	};
 
+
+
 public:
-	TArray<SystemTaskGraph*> systasks;
+	
+	TArray<SystemTaskChain*> systasks;
 	ECS_Registry* registry;
 	
-	void AddTaskgraph(SystemTaskGraph* newGraph);
+	void AddTaskgraph(SystemTaskChain* newGraph);
 	
 	void Run(bool runParallel, ECS_Registry& reg);
 
+#if 0
 	void AsyncFinished(SystemTask* task);
 
 	bool ExecuteTask(SystemTask* task);
-	
+
 	void AddPending(SystemTask* task, TFuture<void>* future);
 	void RemovePending(SystemTask* task);
 
@@ -200,13 +248,37 @@ public:
 	TArray<TSharedPtr<LaunchedTask>> pendingTasks;
 
 	TQueue<SystemTask*> gameTasks;
+#else
 
+
+	void AsyncFinished(GraphTask* task);
+
+	bool LaunchTask(GraphTask* task);
+
+	void AddPending(GraphTask* task, TFuture<void>* future);
+	void RemovePending(GraphTask* task);
+
+	bool CanExecute(GraphTask* task);
+
+	TArray<GraphTask*> waitingTasks;
+	TArray<TSharedPtr<LaunchedTask>> pendingTasks;
+
+	TQueue<GraphTask*> gameTasks;
+	GraphTask* syncTask;
+#endif
 	FCriticalSection mutex;
 
 	FCriticalSection endmutex;
 
 	TAtomic<int> totalTasks;
-	TAtomic<int> tasksUntilSync;
+	//TAtomic<int> tasksUntilSync;
 	FEvent* endEvent;
+
+
+	SystemTask* NewTask();
+	GraphTask* NewGraphTask(SystemTask* originalTask);
+
+	TArray<SystemTask*> AllocatedTasks;
+	TArray<GraphTask*> AllocatedGraphTasks;
 };
 

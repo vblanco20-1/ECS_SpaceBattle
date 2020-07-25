@@ -23,7 +23,7 @@ struct EntityHandle {
 	EntityID handle;
 };
 
-class SystemTaskGraph;
+class SystemTaskChain;
 
 struct System {
 

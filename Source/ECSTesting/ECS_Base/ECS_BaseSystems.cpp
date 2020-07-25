@@ -125,7 +125,7 @@ void StaticMeshDrawSystem::update(ECS_Registry &registry, float dt)
 
 void  StaticMeshDrawSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 1500);
+	SystemTaskBuilder builder(this->name, 1500, sysScheduler);
 
 	float dt = 1.0 / 60.0;
 
@@ -136,6 +136,8 @@ void  StaticMeshDrawSystem::schedule(ECSSystemScheduler* sysScheduler)
 	deps.AddRead<FPosition>();
 	deps.AddRead<FRotationComponent>();
 	deps.AddRead<FScale>();
+
+	builder.AddDependency("Movement");
 
 	builder.AddTask(TaskDependencies{}, [=](ECS_Registry& reg) {
 			SCOPE_CYCLE_COUNTER(STAT_InstancedMeshPrepare);
@@ -349,14 +351,16 @@ void ArchetypeSpawnerSystem::update(ECS_Registry &registry, float dt)
 PRAGMA_DISABLE_OPTIMIZATION
 void ArchetypeSpawnerSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 1000000);
+	SystemTaskBuilder builder(this->name, 1000000, sysScheduler);
 	float dt = 1.0 / 60.0;
 	
 	TaskDependencies deps;
 
 	deps.AddWrite<FArchetypeSpawner>();
 
-	builder.AddTask(TaskDependencies{}, [=](ECS_Registry& reg) {
+	//builder.AddTask(TaskDependencies{}, 
+	builder.AddSyncTask(
+		[=](ECS_Registry& reg) {
 
 		SCOPE_CYCLE_COUNTER(STAT_ECSSpawn);
 
@@ -543,7 +547,7 @@ DECLARE_CYCLE_STAT(TEXT("ECS: Raycast Explosions"), STAT_RaycastExplosions, STAT
 DECLARE_CYCLE_STAT(TEXT("ECS: Raycast Enqueue"), STAT_RaycastResults, STATGROUP_ECS);
 void  RaycastSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 999);
+	SystemTaskBuilder builder("RayCheck", 999, sysScheduler);
 
 	TaskDependencies deps1;
 	float dt = 1.0 / 60.0;
@@ -557,7 +561,7 @@ void  RaycastSystem::schedule(ECSSystemScheduler* sysScheduler)
 		this->CheckRaycasts(reg, dt,GameWorld);
 	});
 
-	
+	sysScheduler->AddTaskgraph(builder.FinishGraph());
 	TaskDependencies deps2;
 
 	deps2.AddWrite< FRaycastResult >();
@@ -565,8 +569,11 @@ void  RaycastSystem::schedule(ECSSystemScheduler* sysScheduler)
 	deps2.AddRead<FPosition>();
 	deps2.AddRead<FLastPosition>();
 
-	//builder.AddGameTask(deps2,[=](ECS_Registry& reg) {
-	builder.AddSyncTask(/*deps2,*/ [=](ECS_Registry& reg) {
+
+	SystemTaskBuilder builder_ray(this->name, 999, sysScheduler);
+
+	builder_ray.AddGameTask(deps2,[=](ECS_Registry& reg) {
+	//builder.AddSyncTask(/*deps2,*/ [=](ECS_Registry& reg) {
 		SCOPE_CYCLE_COUNTER(STAT_RaycastResults);
 
 		UWorld* GameWorld = OwnerActor->GetWorld();
@@ -582,9 +589,12 @@ void  RaycastSystem::schedule(ECSSystemScheduler* sysScheduler)
 		});
 	});
 
-	sysScheduler->AddTaskgraph(builder.FinishGraph());
+	builder_ray.AddDependency("RayCheck");
+	builder_ray.AddDependency("Movement");
+
+	sysScheduler->AddTaskgraph(builder_ray.FinishGraph());
 		
-	SystemTaskBuilder builder2("raycast system: makeExplosions", LifetimeSystem::DeletionSync);
+	SystemTaskBuilder builder2("raycast system: makeExplosions", LifetimeSystem::DeletionSync-1, sysScheduler);
 	builder2.AddSyncTask(
 		[=](ECS_Registry& reg) {
 
@@ -639,9 +649,14 @@ void LifetimeSystem::update(ECS_Registry& registry, float dt)
 	//}
 }
 
+
+
+DECLARE_CYCLE_STAT(TEXT("ECS: Lifetime count"), STAT_LifeCount, STATGROUP_ECS);
+DECLARE_CYCLE_STAT(TEXT("ECS: Lifetime Delete"), STAT_LifeDelete, STATGROUP_ECS);
+
 void  LifetimeSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder("lifetime system", 100000);
+	SystemTaskBuilder builder("lifetime system", 100000, sysScheduler);
 
 	DeletionContext::GetFromRegistry(*sysScheduler->registry);
 
@@ -651,7 +666,7 @@ void  LifetimeSystem::schedule(ECSSystemScheduler* sysScheduler)
 	builder.AddTask(
 		deps,
 		[=](ECS_Registry& reg) {
-
+			SCOPE_CYCLE_COUNTER(STAT_LifeCount);
 			DeletionContext* del = DeletionContext::GetFromRegistry(reg);
 
 			//tick the lifetime timers
@@ -672,22 +687,13 @@ void  LifetimeSystem::schedule(ECSSystemScheduler* sysScheduler)
 
 	sysScheduler->AddTaskgraph(builder.FinishGraph());
 
-	SystemTaskBuilder builder2("lifetime system- Delete", LifetimeSystem::DeletionSync);
+	//SystemTaskBuilder builder2("lifetime system- Delete", LifetimeSystem::DeletionSync, sysScheduler);
+	SystemTaskBuilder builder2("lifetime system- Delete", 0, sysScheduler);
+	builder2.AddDependency("lifetime system");
 	builder2.AddSyncTask(
-		[=](ECS_Registry& reg) {
-			
-			//auto LifetimeView = reg.view<FLifetime>();
-			//for (auto e : LifetimeView)
-			//{
-			//	auto& Deleter = LifetimeView.get(e);
-			//	
-			//	if (Deleter.LifeLeft < 0)
-			//	{
-			//		//destroy everything that has no life left
-			//		reg.destroy(e);
-			//	}
-			//}
+		[=](ECS_Registry& reg) {			
 
+			SCOPE_CYCLE_COUNTER(STAT_LifeDelete);
 			DeletionContext* del = DeletionContext::GetFromRegistry(reg);
 
 			bulk_dequeue(del->entitiesToDelete, [&](EntityID id) {
@@ -696,14 +702,6 @@ void  LifetimeSystem::schedule(ECSSystemScheduler* sysScheduler)
 					reg.destroy(id);
 				}
 			});
-
-
-			//delete everything with a FDestroy component
-			//auto DeleteView = reg.view<FDestroy>();
-			//for (auto e : DeleteView)
-			//{
-			//	reg.destroy(e);
-			//}
 		}
 	);
 
@@ -746,7 +744,7 @@ void CopyTransformToActorSystem::update(ECS_Registry& registry, float dt)
 
 void  CopyTransformToActorSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 10000);
+	SystemTaskBuilder builder(this->name, 10000, sysScheduler);
 
 	TaskDependencies deps1;
 	deps1.AddWrite < FActorTransform>();
@@ -761,6 +759,8 @@ void  CopyTransformToActorSystem::schedule(ECSSystemScheduler* sysScheduler)
 			this->update(reg, 1.0 / 60.0);
 		}
 	);
+
+	builder.AddDependency("Movement");
 
 	sysScheduler->AddTaskgraph(builder.FinishGraph());
 }
@@ -804,15 +804,15 @@ void CopyTransformToECSSystem::update(ECS_Registry& registry, float dt)
 
 void CopyTransformToECSSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 100);
+	SystemTaskBuilder builder(this->name, 100, sysScheduler);
 
 	TaskDependencies deps1;
 	deps1.AddWrite < FActorTransform>();
 	deps1.AddRead<FCopyTransformToECS>();
 	deps1.AddRead<FActorReference>();
 
-	//builder.AddGameTask(deps1,
-	builder.AddSyncTask(//deps1,
+	builder.AddGameTask(deps1,
+	//builder.AddSyncTask(//deps1,
 		[=](ECS_Registry& reg) {
 			SCOPE_CYCLE_COUNTER(STAT_CopyTransformECS);
 			//copy transforms from actor into FActorTransform
@@ -888,7 +888,7 @@ void MovementSystem::update(ECS_Registry& registry, float dt)
 
 void  MovementSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 300);
+	SystemTaskBuilder builder(this->name, 300, sysScheduler);
 
 	float dt = 1.0 / 60.0;
 
@@ -898,6 +898,8 @@ void  MovementSystem::schedule(ECSSystemScheduler* sysScheduler)
 	deps.AddWrite<FLastPosition>();
 	deps.AddRead<FMovement>();
 	deps.AddRead<FMovementRaycast>();
+
+	builder.AddDependency("Boids");
 	builder.AddTask(
 		deps,
 		[=](ECS_Registry& reg) {
@@ -941,7 +943,7 @@ void DebugDrawSystem::update(ECS_Registry& registry, float dt)
 
 void  DebugDrawSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 10000);
+	SystemTaskBuilder builder(this->name, 10000, sysScheduler);
 
 	TaskDependencies deps;
 	deps.AddRead<FPosition>();
