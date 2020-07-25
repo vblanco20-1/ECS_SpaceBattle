@@ -85,9 +85,7 @@ void ECSSystemScheduler::Run(bool runParallel, ECS_Registry& reg)
 	//schedule all the taskchains into a proper task graph
 	TArray<GraphTask*> createdTasks;
 
-	//auto find_last_task_of_system = [&](const FString& name) -> GraphTask* {
-	//
-	//}
+	
 	GraphTask* rootTask = NewGraphTask(nullptr);
 
 	GraphTask* lastSyncTask = rootTask;
@@ -126,9 +124,7 @@ void ECSSystemScheduler::Run(bool runParallel, ECS_Registry& reg)
 						
 				unconnectedTasks.Add(task);
 				break;
-			}
-
-			
+			}		
 		}
 	}
 
@@ -137,6 +133,12 @@ void ECSSystemScheduler::Run(bool runParallel, ECS_Registry& reg)
 	FString gviz = "digraph G { \n";
 	for (auto t : AllocatedGraphTasks) {
 		t->BuildName();
+
+
+		if (t->original && t->original->type == ESysTaskType::GameThread)
+		{
+			t->priorityWeight *= 2;
+		}
 	}
 
 
@@ -282,17 +284,18 @@ void ECSSystemScheduler::Run(bool runParallel, ECS_Registry& reg)
 			while (gameTasks.Dequeue(gametask))
 			{
 			//	UE_LOG(LogFlying, Warning, TEXT("MTXLOCK:Gametask"));
-				endmutex.Lock();
+				//endmutex.Lock();
 
-				bool bCanExecute = CanExecute(gametask);
+				//bool bCanExecute = CanExecute(gametask);
 				
 
-				if (bCanExecute) {
+				//if (bCanExecute) {
+				{
 					
-					AddPending(gametask, nullptr);
+				//	AddPending(gametask, nullptr);
 
 					//UE_LOG(LogFlying, Warning, TEXT("MTXUNLOCK:Gametask"));
-					endmutex.Unlock();
+				//	endmutex.Unlock();
 
 					//UE_LOG(LogFlying, Warning, TEXT("Executing game task: %s"), *gametask->TaskName);
 
@@ -301,12 +304,12 @@ void ECSSystemScheduler::Run(bool runParallel, ECS_Registry& reg)
 
 					AsyncFinished(gametask);
 				}
-				else {
-					//back to the queue
-					waitingTasks.Add(gametask);
-					//UE_LOG(LogFlying, Warning, TEXT("MTXUNLOCK: %s"), "Gametask");
-					endmutex.Unlock();					
-				}
+				//else {
+				//	//back to the queue
+				//	waitingTasks.Add(gametask);
+				//	//UE_LOG(LogFlying, Warning, TEXT("MTXUNLOCK: %s"), "Gametask");
+				//	endmutex.Unlock();					
+				//}
 			}
 			//UE_LOG(LogFlying, Warning, TEXT("MTXLOCK: SyncLaunch0"));
 			endmutex.Lock();
@@ -358,252 +361,9 @@ void ECSSystemScheduler::Run(bool runParallel, ECS_Registry& reg)
 
 
 		}
-
-		#if 0//connect the tasks into a linked list
-		for (int i = 0; i < systasks.Num() - 1; i++) {
-			systasks[i]->next = systasks[i + 1];
-		}
-		
-		//find how many tasks in total
-		tasksUntilSync = 0;
-		totalTasks = 0;
-		SystemTask* itTask = systasks[0]->firstTask;
-		while (itTask) {
-			totalTasks++;
-			itTask = nextTask(itTask);
-		}
-		
-		
-		//run the initial sync-d tasks
-		itTask = systasks[0]->firstTask;
-		while (itTask) {
-			if (itTask->type != ESysTaskType::SyncPoint) {
-				break;
-			}
-			else {
-				SCOPE_CYCLE_COUNTER(STAT_TS_SyncPoint);
-				//UE_LOG(LogFlying, Warning, TEXT("Executing sync task: %s"), *itTask->ownerGraph->name);
-		
-				itTask->function(reg);
-				itTask = nextTask(itTask);
-				totalTasks--;
-			}
-		}
-		//bool bcontinue = true;
-		while (totalTasks > 0) {
-		
-			//find how many tasks until first sync, and gather initial tasks
-			//itTask = systasks[0]->firstTask;
-			tasksUntilSync = 0;
-		
-			//run the initial sync-d tasks		
-			while (itTask) {
-				if (itTask->type != ESysTaskType::SyncPoint) {
-					break;
-				}
-				else {
-					SCOPE_CYCLE_COUNTER(STAT_TS_SyncPoint);
-		
-					//UE_LOG(LogFlying, Warning, TEXT("Executing sync task: %s"), *itTask->ownerGraph->name);
-		
-		
-					itTask->function(reg);
-					itTask = nextTask(itTask);
-					totalTasks--;
-				}
-			}
-		
-			if (totalTasks == 0) return;
-		
-			SystemTask* checktsk = itTask;
-			TArray<SystemTask*> initialTasks;
-		
-			if (checktsk->ownerGraph->firstTask != checktsk) {
-				initialTasks.Add(checktsk);
-			}
-		
-		
-			while (checktsk) {
-				if (checktsk->type == ESysTaskType::SyncPoint) {
-					syncTask = checktsk;
-					break;
-				}
-				if (checktsk->ownerGraph->firstTask == checktsk) {
-					initialTasks.Add(checktsk);
-				}
-				tasksUntilSync++;
-				checktsk = nextTask(checktsk);
-			}
-		
-			//launch initial tasks
-			for (auto t : initialTasks) {
-				ExecuteTask(t);
-			}
-		
-			while (tasksUntilSync.Load(EMemoryOrder::Relaxed) > 0) {
-		
-				SCOPE_CYCLE_COUNTER(STAT_TS_SyncLoop);
-		
-				SystemTask* gametask;
-				while (gameTasks.Dequeue(gametask))
-				{
-					endmutex.Lock();
-		
-					bool bCanExecute = CanExecute(gametask);
-					//endmutex.Unlock();
-		
-					if (bCanExecute) {
-						//endmutex.Lock();
-						AddPending(gametask,nullptr);
-						endmutex.Unlock();
-		
-		
-						//UE_LOG(LogFlying, Warning, TEXT("Executing game task: %s"), *gametask->ownerGraph->name);
-		
-		
-						SCOPE_CYCLE_COUNTER(STAT_TS_GameTask);
-						gametask->function(reg);
-		
-						AsyncFinished(gametask);
-					}
-					else {
-						endmutex.Unlock();
-						//back to the queue
-						gameTasks.Enqueue(gametask);
-		
-						
-					}
-					
-				}
-				TArray<SystemTask*, TInlineAllocator<5>> executableTasks;
-		
-				SystemTask* tsk = nullptr;
-				endmutex.Lock();
-		
-			
-				if (waitingTasks.Num() != 0) {
-		
-					for (int i = 0; i < waitingTasks.Num(); i++) {
-						if (CanExecute(waitingTasks[i])) {
-							tsk = waitingTasks[i];
-							waitingTasks.RemoveAt(i);
-							executableTasks.Add(tsk);
-							i--;
-							//break;
-						}
-					}		
-				}
-				endmutex.Unlock();
-		
-				for (auto t : executableTasks) {
-					ExecuteTask(t);
-				}
-				//if (tsk) {
-				//
-				//	if (!ExecuteTask(tsk)) {
-				//		//special case, the task we just attempted to execute has 
-				//	}
-				//}
-				//else 
-				{
-					//we ran out of stuff, wait a little bit
-					//endmutex.Lock();
-		
-					endEvent->Wait();
-					//pendingTasks[0]->future.Wait();
-		
-					//UE_LOG(LogFlying, Warning, TEXT("Post Wait Task"));
-		
-		
-					//endmutex.Unlock();
-				}
-			}
-		
-			{
-				SCOPE_CYCLE_COUNTER(STAT_TS_SyncPoint);
-				syncTask->function(reg);
-				itTask = nextTask(syncTask);
-				totalTasks--;
-			}
-		}
-#endif
 	}
 }
-#if 0
-void ECSSystemScheduler::AsyncFinished(SystemTask* task)
-{
-	SCOPE_CYCLE_COUNTER(STAT_TS_End1);
 
-	//UE_LOG(LogFlying, Warning, TEXT("Task Finished: %s"), *task->ownerGraph->name);
-
-
-	endmutex.Lock();
-
-	tasksUntilSync--;
-	totalTasks--;
-	
-	RemovePending(task);
-
-	endmutex.Unlock();
-
-	endEvent->Trigger();
-
-	//trigger execution of next task
-	if (task->next) {
-		ExecuteTask(task->next);
-	}
-	//attempt execution of a pending task
-	//else
-	{
-		SystemTask* tsk = nullptr;
-		endmutex.Lock();
-		TArray<SystemTask*, TInlineAllocator<5>> executableTasks;
-		if (waitingTasks.Num() != 0) {
-
-			for (int i = 0; i < waitingTasks.Num(); i++) {
-				if (CanExecute(waitingTasks[i])) {
-					tsk = waitingTasks[i];
-					waitingTasks.RemoveAt(i);
-					executableTasks.Add(tsk);
-					i--;
-					//break;
-				}
-			}
-		}
-		endmutex.Unlock();
-
-		for (auto t : executableTasks) {
-			ExecuteTask(t);
-		}
-
-		//if (waitingTasks.Num() != 0) {
-		//	for (int i = 0; i < waitingTasks.Num(); i++) {
-		//		if (CanExecute(waitingTasks[i])) {
-		//			tsk = waitingTasks[i];
-		//			waitingTasks.RemoveAt(i);
-		//			break;
-		//		}
-		//	}
-		//}
-		//endmutex.Unlock();
-		//
-		//if (tsk) {
-		//	ExecuteTask(tsk);
-		//}	
-
-	}
-	//if (task->next) {
-	//	waitingTasks.Add(task->next);
-	//}
-	//else {
-	//	if (task->ownerGraph->next) {
-	//		waitingTasks.Add(task->ownerGraph->next->firstTask);
-	//	}
-	//}	
-
-	
-}
-#endif
 void ECSSystemScheduler::AsyncFinished(GraphTask* task)
 {
 	SCOPE_CYCLE_COUNTER(STAT_TS_End1);
@@ -629,11 +389,6 @@ void ECSSystemScheduler::AsyncFinished(GraphTask* task)
 	//trigger execution of next task
 
 	
-
-	//if (task->next) {
-	//	ExecuteTask(task->next);
-	//}
-	//attempt execution of a pending task
 	
 	{
 		//UE_LOG(LogFlying, Warning, TEXT("MTXLOCK: AsyncFinished1"));
@@ -677,6 +432,10 @@ void ECSSystemScheduler::AsyncFinished(GraphTask* task)
 		}	
 		//UE_LOG(LogFlying, Warning, TEXT("MTXUNLOCK: AsyncFinished1"));
 		endmutex.Unlock();
+
+		executableTasks.Sort([](const GraphTask& tA,const GraphTask& tB) {
+			return tA.priorityWeight > tB.priorityWeight;
+		});
 
 		for (auto t : executableTasks) {
 
@@ -732,6 +491,7 @@ bool ECSSystemScheduler::LaunchTask(GraphTask* task)
 				}
 				else {
 					//UE_LOG(LogFlying, Warning, TEXT("MTXUNLOCK:LaunchTask1"));
+					AddPending(task, nullptr);
 					endmutex.Unlock();
 					gameTasks.Enqueue(task);
 				}
@@ -742,110 +502,6 @@ bool ECSSystemScheduler::LaunchTask(GraphTask* task)
 		}
 	return false;
 }
-#if 0
-bool ECSSystemScheduler::ExecuteTask(SystemTask* task)
-{
-	SCOPE_CYCLE_COUNTER(STAT_TS_End2);
-	endmutex.Lock();
-	if (task->type == ESysTaskType::SyncPoint) {
-		//syncpoints are special case
-		//assert(false);
-		//endmutex.Lock();
-		//syncTask = task;		
-	}
-	else if (task->type == ESysTaskType::FreeTask || task->type == ESysTaskType::GameThread) {
-		//check dependencies
-		
-		
-		if (!CanExecute(task))
-		{
-			waitingTasks.Add(task);
-			endmutex.Unlock();
-			return false;
-		}
-		else{
-
-			EAsyncExecution exec;
-			if (task->type == ESysTaskType::FreeTask)
-			{
-				exec = EAsyncExecution::TaskGraph;
-
-				//UE_LOG(LogFlying, Warning, TEXT("launching AsyncTask: %s"), *task->ownerGraph->name);
-
-
-				TFuture<void> fut = Async(exec, [=]() {
-					SCOPE_CYCLE_COUNTER(STAT_TS_AsyncTask);
-					task->function(*registry);
-					AsyncFinished(task);
-					},
-					//when it finishes					
-					[=]() {
-						
-					}
-					);
-
-				AddPending(task,&fut);
-				//TSharedPtr<LaunchedTask> newTask = MakeShared<LaunchedTask>();
-				//
-				//
-				//newTask->task = task;
-				//newTask->future = std::move(fut);
-				//newTask->dependencies = task->deps;
-				//
-				////endmutex.Lock();
-				//pendingTasks.Add(newTask);
-			}
-			else {				
-				gameTasks.Enqueue(task);
-			}
-
-		
-			//endmutex.Unlock();
-		}
-		//endmutex.Unlock();
-	}
-	
-	endmutex.Unlock();
-	return true;
-}
-
-void ECSSystemScheduler::AddPending(SystemTask* task, TFuture<void> *future)
-{
-	TSharedPtr<LaunchedTask> newTask = MakeShared<LaunchedTask>();
-
-
-	newTask->task = task;
-	if (future) {
-		newTask->future = std::move(*future);
-	}
-	
-	newTask->dependencies = task->deps;
-	
-	pendingTasks.Add(newTask);
-}
-
-
-void ECSSystemScheduler::RemovePending(SystemTask* task)
-{
-	//UE_LOG(LogFlying, Warning, TEXT("Task Removed: %s"), *task->ownerGraph->name);
-	//remove from pending tasks
-	for (int i = 0; i < pendingTasks.Num(); i++) {
-		if (pendingTasks[i]->task == task) {
-			pendingTasks.RemoveAt(i);
-			break;
-		}
-	}
-}
-bool ECSSystemScheduler::CanExecute(SystemTask* task)
-{
-	for (auto& t : pendingTasks) {
-		if (t->dependencies.ConflictsWith(task->deps)) {
-			return false;
-		}
-	}
-	return true;
-}
-#endif
 void ECSSystemScheduler::RemovePending(GraphTask* task)
 {
 	//remove from pending tasks
@@ -895,6 +551,12 @@ GraphTask* ECSSystemScheduler::NewGraphTask(SystemTask* originalTask)
 	GraphTask* taks = new GraphTask();
 	taks->original = originalTask;
 	taks->predecessorCount = 0;
+	taks->priorityWeight = 1;
+	if (originalTask && originalTask->ownerGraph)
+	{
+		taks->priorityWeight *= originalTask->ownerGraph->priority;
+	}
+	
 	AllocatedGraphTasks.Add(taks);
 
 	return taks;

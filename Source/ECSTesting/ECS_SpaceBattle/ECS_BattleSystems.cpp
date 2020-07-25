@@ -203,7 +203,7 @@ void BoidSystem::UpdateGridmap(ECS_Registry& registry)
 
 void BoidSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name,200,sysScheduler);
+	SystemTaskBuilder builder(this->name,200,sysScheduler,3);
 
 
 	TaskDependencies deps1;

@@ -108,7 +108,7 @@ struct GraphTask {
 	SystemTask* original;
 	FString TaskName;
 	int chainIndex = 0;
-
+	float priorityWeight = 0;
 	int predecessorCount = 1;
 	TArray<GraphTask*, TInlineAllocator<2>> successors;
 
@@ -126,6 +126,7 @@ public:
 	SystemTask* lastTask{ nullptr };
 	int sortKey;
 	FString name;
+	float priority = 1.f;
 	TArray<FString, TInlineAllocator<2>> SystemDependencies;
 
 	bool HasSyncPoint() {
@@ -164,11 +165,12 @@ public:
 
 class SystemTaskBuilder {
 public:
-	SystemTaskBuilder(FString name, int sortkey, class ECSSystemScheduler* _scheduler) {
+	SystemTaskBuilder(FString name, int sortkey, class ECSSystemScheduler* _scheduler, float Priority = 1.f) {
 	
 		graph = new SystemTaskChain();
 		graph->name = name;
 		graph->sortKey = sortkey;
+		graph->priority = Priority;
 		scheduler = _scheduler;
 	};
 	
@@ -199,6 +201,7 @@ public:
 		graph->SystemDependencies.Add(dependency);
 	}
 
+
 	template<typename C>
 	void AddSyncTask( C&& c) {
 		SystemTask* task = scheduler->NewTask();//new SystemTask();		
@@ -209,7 +212,7 @@ public:
 	};
 
 	SystemTaskChain* FinishGraph() { return graph; };
-
+	
 	SystemTaskChain* graph;
 	ECSSystemScheduler* scheduler{nullptr};
 };
