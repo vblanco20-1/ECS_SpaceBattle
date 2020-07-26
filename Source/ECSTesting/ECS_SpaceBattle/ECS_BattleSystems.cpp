@@ -11,9 +11,7 @@ void SpaceshipSystem::update(ECS_Registry& registry, float dt)
 	registry.view<FSpaceship, FRotationComponent, FVelocity>().each([&, dt](auto entity, FSpaceship& ship, FRotationComponent& rotation, FVelocity& vel) {
 
 		rotation.rot = vel.vel.Rotation().Quaternion();
-		//scale.scale = FVector((ex.LiveTime / ex.Duration)*ex.MaxScale);
-
-		});
+	});
 }
 
 void SpaceshipSystem::schedule(ECSSystemScheduler* sysScheduler)
@@ -37,9 +35,7 @@ void SpaceshipSystem::schedule(ECSSystemScheduler* sysScheduler)
 }
 
 void BoidSystem::update(ECS_Registry& registry, float dt)
-{
-	
-
+{	
 	UpdateGridmap(registry);
 	UpdateAllBoids(registry, dt);
 
@@ -231,37 +227,12 @@ void BoidSystem::schedule(ECSSystemScheduler* sysScheduler)
 	);
 
 	builder.AddDependency("CopyTransform");
-	////block everything past boids for good logic
-	//builder.AddSyncTask([](ECS_Registry& reg) {
-	//	
-	//});
 
 	sysScheduler->AddTaskgraph(builder.FinishGraph());
 }
 
 void ExplosionSystem::update(ECS_Registry& registry, float dt)
 {
-	assert(OwnerActor);
-	SCOPE_CYCLE_COUNTER(STAT_Explosion);
-
-	auto AllExplosionsView = registry.view<FExplosion>();
-	for (auto e : AllExplosionsView) {
-		FExplosion& ex = AllExplosionsView.get(e);
-
-		ex.LiveTime += dt;
-		if (ex.LiveTime > ex.Duration)
-		{
-			//registry.assign<FDestroy>(e);
-		}
-	}
-
-
-	registry.view<FExplosion, FScale>().each([&, dt](auto entity, FExplosion& ex, FScale& scale) {
-
-
-		scale.scale = FVector((ex.LiveTime / ex.Duration) * ex.MaxScale);
-
-		});
 }
 
 void ExplosionSystem::schedule(ECSSystemScheduler* sysScheduler)
@@ -279,9 +250,7 @@ void ExplosionSystem::schedule(ECSSystemScheduler* sysScheduler)
 		[=](ECS_Registry& reg) {
 			SCOPE_CYCLE_COUNTER(STAT_Explosion);
 
-
 			DeletionContext* del = DeletionContext::GetFromRegistry(reg);
-
 
 			auto AllExplosionsView = reg.view<FExplosion>();
 			for (auto e : AllExplosionsView) {

@@ -50,6 +50,8 @@ struct CopyTransformToActorSystem :public System {
 
 	void update(ECS_Registry &registry, float dt) override;
 
+	void PackTransforms(ECS_Registry& registry);
+
 
 	void schedule(ECSSystemScheduler* sysScheduler) override;
 
