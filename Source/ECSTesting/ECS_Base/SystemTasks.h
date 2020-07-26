@@ -91,7 +91,9 @@ enum class ESysTaskType : uint8_t {
 enum class ESysTaskFlags : uint32_t {
 	ExecuteAsync = 1 << 0,
 	ExecuteGameThread = 1 << 1,
-	HighPriority = 1 << 2
+	HighPriority = 1 << 2,
+
+	NoECS = 1 << 3
 };
 
 struct SystemTask {
@@ -182,18 +184,30 @@ public:
 		task->type = ESysTaskType::FreeTask;
 		task->flags = flags;
 		task->ownerGraph = graph;
+
+		if ( !((uint32_t)flags & (uint32_t)ESysTaskFlags::NoECS) )
+		{
+			task->deps.AddRead<ECS_Registry>();
+		}
+
 		graph->AddTask(task);
 		//graph->functions.Add(std::move(c)); 
 	};
 
 	template< typename C>
-	void AddGameTask(const TaskDependencies& deps, C&& c) {
+	void AddGameTask(const TaskDependencies& deps, C&& c, ESysTaskFlags flags = ESysTaskFlags::ExecuteGameThread) {
 		SystemTask* task = scheduler->NewTask();
 		task->deps = deps;
 		task->function = std::move(c);
 		task->type = ESysTaskType::GameThread;
-		task->flags = ESysTaskFlags::ExecuteGameThread;
+		task->flags = flags;
 		task->ownerGraph = graph;
+
+		if (!((uint32_t)flags & (uint32_t)ESysTaskFlags::NoECS))
+		{
+			task->deps.AddRead<ECS_Registry>();
+		}
+
 		graph->AddTask(task);
 	};
 
@@ -206,8 +220,10 @@ public:
 	void AddSyncTask( C&& c) {
 		SystemTask* task = scheduler->NewTask();//new SystemTask();		
 		task->function = std::move(c);
-		task->type = ESysTaskType::SyncPoint;
+		task->type = ESysTaskType::FreeTask;//GameThread;//SyncPoint;
 		task->ownerGraph = graph;
+		task->deps.AddWrite<ECS_Registry>();
+		task->flags = ESysTaskFlags::ExecuteGameThread;
 		graph->AddTask(task);
 	};
 

@@ -274,6 +274,7 @@ void ExplosionSystem::schedule(ECSSystemScheduler* sysScheduler)
 	//deps1.AddWrite < FDestroy > ();
 	deps1.AddWrite < FExplosion > ();
 	//builder.AddGameTask(deps1,
+	builder.AddDependency("Movement");
 	builder.AddSyncTask(//deps1,
 		[=](ECS_Registry& reg) {
 			SCOPE_CYCLE_COUNTER(STAT_Explosion);

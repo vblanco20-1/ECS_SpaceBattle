@@ -351,15 +351,15 @@ void ArchetypeSpawnerSystem::update(ECS_Registry &registry, float dt)
 PRAGMA_DISABLE_OPTIMIZATION
 void ArchetypeSpawnerSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 1000000, sysScheduler);
+	SystemTaskBuilder builder(this->name, 1000000, sysScheduler,0.1);
 	float dt = 1.0 / 60.0;
 	
 	TaskDependencies deps;
 
 	deps.AddWrite<FArchetypeSpawner>();
-
-	//builder.AddTask(TaskDependencies{}, 
-	builder.AddSyncTask(
+	builder.AddDependency("EndBarrier");
+	builder.AddTask(TaskDependencies{}, 
+	//builder.AddSyncTask(
 		[=](ECS_Registry& reg) {
 
 		SCOPE_CYCLE_COUNTER(STAT_ECSSpawn);
@@ -456,68 +456,79 @@ void ArchetypeSpawnerSystem::schedule(ECSSystemScheduler* sysScheduler)
 PRAGMA_ENABLE_OPTIMIZATION
 void RaycastSystem::update(ECS_Registry &registry, float dt)
 {
-	assert(OwnerActor);
-	UWorld * GameWorld = OwnerActor->GetWorld();
-	SCOPE_CYCLE_COUNTER(STAT_ECSRaycast);
-
-	CheckRaycasts(registry, dt, GameWorld);
-	for (auto& ex : explosions) {
-
-		CreateExplosion(registry, ex.et, ex.explosionPoint);
-	}
-	explosions.Empty();
-
-	//movement raycast needs a "last position" component
-	registry.view<FMovementRaycast, FPosition, FLastPosition>().each([&, dt](auto entity, FMovementRaycast & ray, FPosition & pos, FLastPosition & lastPos) {
-		
-		if (pos.pos != lastPos.pos)
-		{			
-			FTraceHandle hit = GameWorld->AsyncLineTraceByChannel(EAsyncTraceType::Single, lastPos.pos, pos.pos, ray.RayChannel);
-			
-			registry.accommodate<FRaycastResult>(entity, hit);			
-		}
-	});	
+	
 }
 
 void RaycastSystem::CheckRaycasts(ECS_Registry& registry, float dt, UWorld* GameWorld)
 {
+	rayUnits.Reset();
 	//check all the raycast results from the async raycast
 	registry.view<FRaycastResult>().each([&, dt](auto entity, FRaycastResult& ray) {
 
-
 		if (GameWorld->IsTraceHandleValid(ray.handle, false))
 		{
-			FTraceDatum tdata;
-			GameWorld->QueryTraceData(ray.handle, tdata);
-			if (tdata.OutHits.IsValidIndex(0))
+			rayUnits.Add({ entity, &ray });
+		}
+
+	});
+
+	ParallelFor(rayUnits.Num(), [&](auto i) {
+
+		auto ray = *rayUnits[i].ray;
+		auto entity = rayUnits[i].et;
+
+		FTraceDatum tdata;
+		GameWorld->QueryTraceData(ray.handle, tdata);
+		if (tdata.OutHits.IsValidIndex(0))
+		{
+			//it actually hit
+			if (tdata.OutHits[0].bBlockingHit)
 			{
-				//it actually hit
-				if (tdata.OutHits[0].bBlockingHit)
+				////if its an actor, try to damage it. 
+				AActor* act = tdata.OutHits[0].GetActor();
+				if (act)
 				{
-					////if its an actor, try to damage it. 
-					//AActor* act = tdata.OutHits[0].GetActor();
-					//if (act)
-					//{
-					//	auto hcmp = act->FindComponentByClass<UECS_HealthComponentWrapper>();
-					//	if (hcmp)
-					//	{
-					//		hcmp->OnDamaged.Broadcast(99.0);
-					//	}
-					//}
+					actorCalls.enqueue({ act });
+				}
 
-					//if the entity was a projectile, create explosion and destroy it
-					if (registry.has<FProjectile>(entity))
-					{
-						FVector ExplosionPoint = tdata.OutHits[0].ImpactPoint;
+				//if the entity was a projectile, create explosion and destroy it
+				if (registry.has<FProjectile>(entity))
+				{
+					FVector ExplosionPoint = tdata.OutHits[0].ImpactPoint;
 
-						//CreateExplosion(registry, entity, ExplosionPoint);
-
-						explosions.Add({entity,ExplosionPoint});
-					}
+					explosions.enqueue({ entity,ExplosionPoint });
 				}
 			}
-		}
+		}		
 	});
+
+	//	if (GameWorld->IsTraceHandleValid(ray.handle, false))
+	//	{
+	//		FTraceDatum tdata;
+	//		GameWorld->QueryTraceData(ray.handle, tdata);
+	//		if (tdata.OutHits.IsValidIndex(0))
+	//		{
+	//			//it actually hit
+	//			if (tdata.OutHits[0].bBlockingHit)
+	//			{
+	//				////if its an actor, try to damage it. 
+	//				AActor* act = tdata.OutHits[0].GetActor();
+	//				if (act)
+	//				{
+	//					actorCalls.enqueue({act});						
+	//				}
+	//
+	//				//if the entity was a projectile, create explosion and destroy it
+	//				if (registry.has<FProjectile>(entity))
+	//				{
+	//					FVector ExplosionPoint = tdata.OutHits[0].ImpactPoint;
+	//
+	//					explosions.enqueue({entity,ExplosionPoint});
+	//				}
+	//			}
+	//		}
+	//	}
+	//});
 }
 
 void RaycastSystem::CreateExplosion(ECS_Registry& registry, EntityID entity, FVector ExplosionPoint)
@@ -543,6 +554,7 @@ void RaycastSystem::CreateExplosion(ECS_Registry& registry, EntityID entity, FVe
 	//registry.accommodate<FDestroy>(entity);
 }
 
+DECLARE_CYCLE_STAT(TEXT("ECS: Raycast BP"), STAT_RaycastBP, STATGROUP_ECS);
 DECLARE_CYCLE_STAT(TEXT("ECS: Raycast Explosions"), STAT_RaycastExplosions, STATGROUP_ECS);
 DECLARE_CYCLE_STAT(TEXT("ECS: Raycast Enqueue"), STAT_RaycastResults, STATGROUP_ECS);
 void  RaycastSystem::schedule(ECSSystemScheduler* sysScheduler)
@@ -570,8 +582,9 @@ void  RaycastSystem::schedule(ECSSystemScheduler* sysScheduler)
 	deps2.AddRead<FLastPosition>();
 
 
-	SystemTaskBuilder builder_ray(this->name, 999, sysScheduler);
+	SystemTaskBuilder builder_ray(this->name, 999, sysScheduler,2.5);
 
+	//builder_ray.SetPriority(2.5);
 	builder_ray.AddGameTask(deps2,[=](ECS_Registry& reg) {
 	//builder.AddSyncTask(/*deps2,*/ [=](ECS_Registry& reg) {
 		SCOPE_CYCLE_COUNTER(STAT_RaycastResults);
@@ -594,7 +607,7 @@ void  RaycastSystem::schedule(ECSSystemScheduler* sysScheduler)
 
 	sysScheduler->AddTaskgraph(builder_ray.FinishGraph());
 		
-	SystemTaskBuilder builder2("raycast system: makeExplosions", LifetimeSystem::DeletionSync-1, sysScheduler);
+	SystemTaskBuilder builder2("RayExplosions", LifetimeSystem::DeletionSync-1, sysScheduler);
 	builder2.AddSyncTask(
 		[=](ECS_Registry& reg) {
 
@@ -602,20 +615,43 @@ void  RaycastSystem::schedule(ECSSystemScheduler* sysScheduler)
 
 			DeletionContext* del = DeletionContext::GetFromRegistry(reg);
 
-			for (auto& ex : explosions) {
-
+			bulk_dequeue(explosions, [&reg,&del,this](const ExplosionStr& ex) {
 				if (reg.has<FProjectile>(ex.et))
 				{
-					CreateExplosion(reg, ex.et, ex.explosionPoint);					
+					CreateExplosion(reg, ex.et, ex.explosionPoint);
 				}
 				del->AddToQueue(ex.et);
-			}
-
-			explosions.Empty();
+			});			
 		}
 	);
+	builder2.AddDependency("EndBarrier");
 
+	SystemTaskBuilder builder3("raycast system: broadcast BP", 0, sysScheduler);
+	builder3.AddDependency(this->name);
+	builder3.AddGameTask(TaskDependencies {},
+		[=](ECS_Registry& reg) {
+
+			SCOPE_CYCLE_COUNTER(STAT_RaycastBP);
+
+			bulk_dequeue(actorCalls, [](const ActorBpCall& a) {
+				AActor* act = a.actor.Get();
+				if (act) {
+
+					auto hcmp = act->FindComponentByClass<UECS_HealthComponentWrapper>();
+					if (hcmp)
+					{
+						hcmp->OnDamaged.Broadcast(99.0);
+					}
+				}
+			});				
+			
+			
+		}, ESysTaskFlags::NoECS
+	);
+	builder3.AddDependency("EndBarrier");
 	sysScheduler->AddTaskgraph(builder2.FinishGraph());
+
+	sysScheduler->AddTaskgraph(builder3.FinishGraph());
 }
 
 void LifetimeSystem::update(ECS_Registry& registry, float dt)
@@ -656,6 +692,17 @@ DECLARE_CYCLE_STAT(TEXT("ECS: Lifetime Delete"), STAT_LifeDelete, STATGROUP_ECS)
 
 void  LifetimeSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
+	SystemTaskBuilder builder_end("EndBarrier", 100000, sysScheduler);
+
+	builder_end.AddDependency("Movement");
+	builder_end.AddTask(
+		TaskDependencies{},
+		[=](ECS_Registry& reg) {			
+		}
+	);
+
+	sysScheduler->AddTaskgraph(builder_end.FinishGraph());
+
 	SystemTaskBuilder builder("lifetime system", 100000, sysScheduler);
 
 	DeletionContext::GetFromRegistry(*sysScheduler->registry);
@@ -663,6 +710,7 @@ void  LifetimeSystem::schedule(ECSSystemScheduler* sysScheduler)
 	TaskDependencies deps;
 	deps.AddWrite<FLifetime>();
 
+	builder.AddDependency("EndBarrier");
 	builder.AddTask(
 		deps,
 		[=](ECS_Registry& reg) {
@@ -688,7 +736,7 @@ void  LifetimeSystem::schedule(ECSSystemScheduler* sysScheduler)
 	sysScheduler->AddTaskgraph(builder.FinishGraph());
 
 	//SystemTaskBuilder builder2("lifetime system- Delete", LifetimeSystem::DeletionSync, sysScheduler);
-	SystemTaskBuilder builder2("lifetime system- Delete", 0, sysScheduler);
+	SystemTaskBuilder builder2("lifetime system- Delete", 0, sysScheduler, 0.1);
 	builder2.AddDependency("lifetime system");
 	builder2.AddSyncTask(
 		[=](ECS_Registry& reg) {			
@@ -712,9 +760,9 @@ void CopyTransformToActorSystem::update(ECS_Registry& registry, float dt)
 {
 
 	assert(OwnerActor);
-
+	SCOPE_CYCLE_COUNTER(STAT_PackActorTransform);
 	{
-		SCOPE_CYCLE_COUNTER(STAT_PackActorTransform);
+		
 		//fill ActorTransform from separate components		
 		registry.view<FActorTransform, FPosition>().each([&, dt](auto entity, FActorTransform& transform, FPosition& pos) {
 			transform.transform.SetLocation(pos.pos);
@@ -727,7 +775,7 @@ void CopyTransformToActorSystem::update(ECS_Registry& registry, float dt)
 			transform.transform.SetScale3D(sc.scale);
 			});
 	}
-	SCOPE_CYCLE_COUNTER(STAT_CopyTransformActor);
+	
 	//copy transforms from actor into FActorTransform	
 	auto TransformView = registry.view<FCopyTransformToActor, FActorReference, FActorTransform>();
 	for (auto e : TransformView)
@@ -737,7 +785,8 @@ void CopyTransformToActorSystem::update(ECS_Registry& registry, float dt)
 
 		if (actor.ptr.IsValid())
 		{
-			actor.ptr->SetActorTransform(transform);
+			//actor.ptr->SetActorTransform(transform);
+			transforms.Add({ actor.ptr,transform });
 		}
 	}
 }
@@ -753,7 +802,7 @@ void  CopyTransformToActorSystem::schedule(ECSSystemScheduler* sysScheduler)
 	deps1.AddRead<FRotationComponent>();
 	deps1.AddRead<FActorReference>();
 
-	builder.AddGameTask(deps1,
+	builder.AddTask(deps1,
 	//builder.AddSyncTask(
 		[=](ECS_Registry& reg) {
 			this->update(reg, 1.0 / 60.0);
@@ -762,7 +811,25 @@ void  CopyTransformToActorSystem::schedule(ECSSystemScheduler* sysScheduler)
 
 	builder.AddDependency("Movement");
 
+	SystemTaskBuilder builder2("Movement Apply", 11000, sysScheduler);
+
+	builder2.AddGameTask(deps1,
+		//builder.AddSyncTask(
+		[=](ECS_Registry& reg) {
+			SCOPE_CYCLE_COUNTER(STAT_CopyTransformActor);
+			for (auto& a : transforms) {
+				if (a.actor.IsValid())
+				{
+					a.actor->SetActorTransform(a.transform);
+				}
+			}
+			transforms.Reset();
+		},ESysTaskFlags::NoECS
+	);
+	builder2.AddDependency(this->name);
+	builder.AddDependency("Movement");
 	sysScheduler->AddTaskgraph(builder.FinishGraph());
+	sysScheduler->AddTaskgraph(builder2.FinishGraph());
 }
 
 void CopyTransformToECSSystem::update(ECS_Registry& registry, float dt)

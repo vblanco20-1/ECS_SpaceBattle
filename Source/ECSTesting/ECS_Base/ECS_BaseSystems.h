@@ -52,6 +52,13 @@ struct CopyTransformToActorSystem :public System {
 
 
 	void schedule(ECSSystemScheduler* sysScheduler) override;
+
+	struct ActorTransformParm {
+		TWeakObjectPtr<AActor> actor;
+		FTransform transform;		
+	};
+
+	TArray<ActorTransformParm> transforms;
 };
 
 DECLARE_CYCLE_STAT(TEXT("ECS: Spanwer System"), STAT_ECSSpawn, STATGROUP_ECS);
@@ -113,8 +120,18 @@ struct RaycastSystem :public System {
 		EntityID et;
 		FVector explosionPoint;
 	};
-	TArray<ExplosionStr> explosions;
 
+	struct ActorBpCall {
+		TWeakObjectPtr<AActor> actor;
+	};
+
+	struct RaycastUnit {
+		EntityID et;
+		FRaycastResult* ray;
+	};
+	TArray<RaycastUnit> rayUnits;
+	moodycamel::ConcurrentQueue<ExplosionStr> explosions;
+	moodycamel::ConcurrentQueue<ActorBpCall> actorCalls;
 };
 DECLARE_CYCLE_STAT(TEXT("ECS: Lifetime System"), STAT_Lifetime, STATGROUP_ECS);
 struct LifetimeSystem :public System {
