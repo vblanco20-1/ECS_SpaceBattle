@@ -4,7 +4,7 @@
 #include "ECS_Core.h"
 #include "ECS_BaseSystems.h"
 #include "ECS_BattleSystems.h"
-#include "SystemTasks.h"
+
 
 
 // Sets default values
@@ -22,6 +22,7 @@ void A_ECSWorldActor::BeginPlay()
 	
 
 		ECSWorld = MakeUnique<ECS_World>();
+		TaskScheduler = MakeUnique<ECSSystemScheduler>();
 		
 		ECSWorld->CreateAndRegisterSystem<CopyTransformToECSSystem>("CopyTransform");
 		ECSWorld->CreateAndRegisterSystem<BoidSystem>("Boids");
@@ -66,13 +67,13 @@ void A_ECSWorldActor::Tick(float DeltaTime)
 
 	
 
-	ECSSystemScheduler* sched = new ECSSystemScheduler();
-	sched->registry = &ECSWorld->registry;
+	TaskScheduler->Reset();
+	TaskScheduler->registry = &ECSWorld->registry;
 
 	for(auto sys : ECSWorld->systems){
-		 sys->schedule(sched);		
+		 sys->schedule(TaskScheduler.Get());
 	}
 
-	sched->Run(ECSCVars::EnableParallel == 1,ECSWorld->registry);
+	TaskScheduler->Run(ECSCVars::EnableParallel == 1,ECSWorld->registry);
 }
 

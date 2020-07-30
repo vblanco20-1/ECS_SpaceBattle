@@ -165,19 +165,80 @@ public:
 };
 
 
+
+
+class ECSSystemScheduler {
+
+	struct LaunchedTask {
+		GraphTask* task;
+		//SystemTask* task;
+		TaskDependencies dependencies;
+		TFuture<void> future;
+	};
+
+public:
+
+	~ECSSystemScheduler();
+	
+	TArray<SystemTaskChain*> systasks;
+	ECS_Registry* registry;
+	
+	void AddTaskgraph(SystemTaskChain* newGraph);
+	
+	void Run(bool runParallel, ECS_Registry& reg);
+
+	void Reset();
+
+	void AsyncFinished(GraphTask* task);
+
+	bool LaunchTask(GraphTask* task);
+
+	void AddPending(GraphTask* task, TFuture<void>* future);
+	void RemovePending(GraphTask* task);
+
+	bool CanExecute(GraphTask* task);
+
+	TArray<GraphTask*> waitingTasks;
+	TArray<TSharedPtr<LaunchedTask>> pendingTasks;
+
+	TQueue<GraphTask*> gameTasks;
+	GraphTask* syncTask;
+
+
+	FCriticalSection mutex;
+
+	FCriticalSection endmutex;
+
+	TAtomic<int> totalTasks;
+	//TAtomic<int> tasksUntilSync;
+	FEvent* endEvent;
+
+
+	SystemTask* NewTask();
+	GraphTask* NewGraphTask(SystemTask* originalTask);
+	SystemTaskChain* NewTaskChain();
+
+
+
+	//pooled allocations for easy cleanup
+	TArray<SystemTask*> AllocatedTasks;
+	TArray<GraphTask*> AllocatedGraphTasks;
+	TArray<SystemTaskChain*> AllocatedChains;
+};
+
 class SystemTaskBuilder {
 public:
 	SystemTaskBuilder(FString name, int sortkey, class ECSSystemScheduler* _scheduler, float Priority = 1.f) {
-	
-		graph = new SystemTaskChain();
+
+		graph = _scheduler->NewTaskChain();
 		graph->name = name;
 		graph->sortKey = sortkey;
 		graph->priority = Priority;
 		scheduler = _scheduler;
 	};
-	
+
 	template< typename C>
-	void AddTask(const TaskDependencies& deps, C&& c , ESysTaskFlags flags = ESysTaskFlags::ExecuteAsync) {
+	void AddTask(const TaskDependencies& deps, C&& c, ESysTaskFlags flags = ESysTaskFlags::ExecuteAsync) {
 		SystemTask* task = scheduler->NewTask();
 		task->deps = deps;
 		task->function = std::move(c);
@@ -185,7 +246,7 @@ public:
 		task->flags = flags;
 		task->ownerGraph = graph;
 
-		if ( !((uint32_t)flags & (uint32_t)ESysTaskFlags::NoECS) )
+		if (!((uint32_t)flags & (uint32_t)ESysTaskFlags::NoECS))
 		{
 			task->deps.AddRead<ECS_Registry>();
 		}
@@ -217,7 +278,7 @@ public:
 
 
 	template<typename C>
-	void AddSyncTask( C&& c) {
+	void AddSyncTask(C&& c) {
 		SystemTask* task = scheduler->NewTask();//new SystemTask();		
 		task->function = std::move(c);
 		task->type = ESysTaskType::FreeTask;//GameThread;//SyncPoint;
@@ -228,76 +289,7 @@ public:
 	};
 
 	SystemTaskChain* FinishGraph() { return graph; };
-	
+
 	SystemTaskChain* graph;
-	ECSSystemScheduler* scheduler{nullptr};
+	ECSSystemScheduler* scheduler{ nullptr };
 };
-
-class ECSSystemScheduler {
-
-	struct LaunchedTask {
-		GraphTask* task;
-		//SystemTask* task;
-		TaskDependencies dependencies;
-		TFuture<void> future;
-	};
-
-
-
-public:
-	
-	TArray<SystemTaskChain*> systasks;
-	ECS_Registry* registry;
-	
-	void AddTaskgraph(SystemTaskChain* newGraph);
-	
-	void Run(bool runParallel, ECS_Registry& reg);
-
-#if 0
-	void AsyncFinished(SystemTask* task);
-
-	bool ExecuteTask(SystemTask* task);
-
-	void AddPending(SystemTask* task, TFuture<void>* future);
-	void RemovePending(SystemTask* task);
-
-	bool CanExecute(SystemTask* task);
-	SystemTask* syncTask;
-	TArray<SystemTask*> waitingTasks;
-	TArray<TSharedPtr<LaunchedTask>> pendingTasks;
-
-	TQueue<SystemTask*> gameTasks;
-#else
-
-
-	void AsyncFinished(GraphTask* task);
-
-	bool LaunchTask(GraphTask* task);
-
-	void AddPending(GraphTask* task, TFuture<void>* future);
-	void RemovePending(GraphTask* task);
-
-	bool CanExecute(GraphTask* task);
-
-	TArray<GraphTask*> waitingTasks;
-	TArray<TSharedPtr<LaunchedTask>> pendingTasks;
-
-	TQueue<GraphTask*> gameTasks;
-	GraphTask* syncTask;
-#endif
-	FCriticalSection mutex;
-
-	FCriticalSection endmutex;
-
-	TAtomic<int> totalTasks;
-	//TAtomic<int> tasksUntilSync;
-	FEvent* endEvent;
-
-
-	SystemTask* NewTask();
-	GraphTask* NewGraphTask(SystemTask* originalTask);
-
-	TArray<SystemTask*> AllocatedTasks;
-	TArray<GraphTask*> AllocatedGraphTasks;
-};
-

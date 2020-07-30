@@ -284,18 +284,12 @@ void ECSSystemScheduler::Run(bool runParallel, ECS_Registry& reg)
 			while (gameTasks.Dequeue(gametask))
 			{
 			//	UE_LOG(LogFlying, Warning, TEXT("MTXLOCK:Gametask"));
-				//endmutex.Lock();
-
-				//bool bCanExecute = CanExecute(gametask);
 				
-
-				//if (bCanExecute) {
 				{
 					
-				//	AddPending(gametask, nullptr);
+				
 
-					//UE_LOG(LogFlying, Warning, TEXT("MTXUNLOCK:Gametask"));
-				//	endmutex.Unlock();
+					//UE_LOG(LogFlying, Warning, TEXT("MTXUNLOCK:Gametask"));				
 
 					//UE_LOG(LogFlying, Warning, TEXT("Executing game task: %s"), *gametask->TaskName);
 
@@ -303,13 +297,7 @@ void ECSSystemScheduler::Run(bool runParallel, ECS_Registry& reg)
 					gametask->original->function(reg);
 
 					AsyncFinished(gametask);
-				}
-				//else {
-				//	//back to the queue
-				//	waitingTasks.Add(gametask);
-				//	//UE_LOG(LogFlying, Warning, TEXT("MTXUNLOCK: %s"), "Gametask");
-				//	endmutex.Unlock();					
-				//}
+				}				
 			}
 			//UE_LOG(LogFlying, Warning, TEXT("MTXLOCK: SyncLaunch0"));
 			endmutex.Lock();
@@ -328,10 +316,10 @@ void ECSSystemScheduler::Run(bool runParallel, ECS_Registry& reg)
 					sync->original->function(reg);
 					syncTask = nullptr;
 					//UE_LOG(LogFlying, Warning, TEXT("MTXUNLOCK: SyncLaunch"));
-					//endmutex.Unlock();
+					
 					AsyncFinished(sync);
 					//UE_LOG(LogFlying, Warning, TEXT("MTXLOCK: SyncLaunch"));
-					//endmutex.Lock();
+					
 					sync = nullptr;
 					if (syncTask != nullptr)
 					{
@@ -341,25 +329,20 @@ void ECSSystemScheduler::Run(bool runParallel, ECS_Registry& reg)
 					else
 					{
 					//	UE_LOG(LogFlying, Warning, TEXT("MTXLOCK: SyncLaunch2"));
-						//endmutex.Lock();
+					
 					}
 				};
-			}			
+			}
+			
+			//UE_LOG(LogFlying, Warning, TEXT("MTXUNLOCK: FinalSync"));
+			endmutex.Unlock();
+			endEvent->Wait(1);
+			loopcounts++;
+			if (loopcounts > 100) {
+				//UE_LOG(LogFlying, Warning, TEXT("Shits busted"));
+				breakloop = true;
 
-			//if (pendingTasks.Num() == 0)
-			//{
-				//UE_LOG(LogFlying, Warning, TEXT("MTXUNLOCK: FinalSync"));
-				endmutex.Unlock();
-				endEvent->Wait(1);		
-				loopcounts++;
-				if (loopcounts > 100) {
-					//UE_LOG(LogFlying, Warning, TEXT("Shits busted"));
-					breakloop = true;
-					//return;
-				}
-			//}
-
-
+			}
 		}
 	}
 }
@@ -373,8 +356,6 @@ void ECSSystemScheduler::AsyncFinished(GraphTask* task)
 
 	//UE_LOG(LogFlying, Warning, TEXT("MTXLOCK:AsyncFinished0"));
 	endmutex.Lock();
-
-
 	
 	totalTasks--;
 	if (task->original)
@@ -386,10 +367,7 @@ void ECSSystemScheduler::AsyncFinished(GraphTask* task)
 
 	endEvent->Trigger();
 
-	//trigger execution of next task
-
-	
-	
+	//trigger execution of next task	
 	{
 		//UE_LOG(LogFlying, Warning, TEXT("MTXLOCK: AsyncFinished1"));
 		endmutex.Lock();
@@ -401,11 +379,9 @@ void ECSSystemScheduler::AsyncFinished(GraphTask* task)
 
 			nxt->predecessorCount--;
 			if (nxt->predecessorCount == 0) {
-			//	if (CanExecute(nxt)) {
-
-					//UE_LOG(LogFlying, Warning, TEXT("ADD WAITING %s"), *nxt->TaskName);
-					waitingTasks.Add(nxt);
-			//	}
+		
+				//UE_LOG(LogFlying, Warning, TEXT("ADD WAITING %s"), *nxt->TaskName);
+				waitingTasks.Add(nxt);			
 			}
 		}
 		
@@ -458,7 +434,7 @@ bool ECSSystemScheduler::LaunchTask(GraphTask* task)
 		
 		return true;
 	}
-	else //if (tasktype == ESysTaskType::FreeTask || tasktype == ESysTaskType::GameThread)
+	else 
 		{
 			if (!CanExecute(task))
 			{
@@ -560,5 +536,41 @@ GraphTask* ECSSystemScheduler::NewGraphTask(SystemTask* originalTask)
 	AllocatedGraphTasks.Add(taks);
 
 	return taks;
+}
+
+SystemTaskChain* ECSSystemScheduler::NewTaskChain()
+{
+	SystemTaskChain* taks = new SystemTaskChain();
+
+	AllocatedChains.Add(taks);
+
+	return taks;
+}
+ECSSystemScheduler::~ECSSystemScheduler() {
+	
+	Reset();
+}
+
+void ECSSystemScheduler::Reset()
+{
+	for (auto t : AllocatedTasks)
+	{
+		delete t;
+	}
+	for (auto t : AllocatedGraphTasks)
+	{
+		delete t;
+	}
+	for (auto t : AllocatedChains)
+	{
+		delete t;
+	}
+
+	AllocatedTasks.Reset();
+	AllocatedGraphTasks.Reset();
+	AllocatedChains.Reset();
+	systasks.Reset();
+	waitingTasks.Reset();
+	pendingTasks.Reset();
 }
 

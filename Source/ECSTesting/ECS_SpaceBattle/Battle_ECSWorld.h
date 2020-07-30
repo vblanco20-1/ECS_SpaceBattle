@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ECS_Core.h"
+#include "SystemTasks.h"
 #include "Battle_ECSWorld.generated.h"
 
 
@@ -16,7 +17,6 @@ class ECSTESTING_API A_ECSWorldActor : public AActor
 public:	
 	// Sets default values for this actor's properties
 	A_ECSWorldActor();
-
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
@@ -26,4 +26,6 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	TUniquePtr<ECS_World> ECSWorld;	
+
+	TUniquePtr<ECSSystemScheduler> TaskScheduler;
 };
