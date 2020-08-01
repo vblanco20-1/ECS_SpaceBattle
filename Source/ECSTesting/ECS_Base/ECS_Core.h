@@ -109,6 +109,20 @@ public:
 		return s;
 	}
 
+	template<typename T>
+	System* CreateAndRegisterSystem()
+	{
+		System* s = new T();
+
+		if (s)
+		{
+			s->name = "Unnamed";
+			systems.push_back(s);
+			//namedSystems.Add(name, s);
+		}
+		return s;
+	}
+
 	void RegisterSystem(System* newSystem, FString name)
 	{
 		systems.push_back(newSystem);

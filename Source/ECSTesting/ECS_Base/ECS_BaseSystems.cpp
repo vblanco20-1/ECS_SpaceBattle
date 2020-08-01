@@ -45,7 +45,7 @@ void StaticMeshDrawSystem::update(ECS_Registry &registry, float dt)
 
 void  StaticMeshDrawSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 1500, sysScheduler);
+	SystemTaskBuilder builder("StaticDraws", 1500, sysScheduler);
 
 	float dt = 1.0 / 60.0;
 
@@ -194,7 +194,7 @@ void ArchetypeSpawnerSystem::update(ECS_Registry &registry, float dt)
 PRAGMA_DISABLE_OPTIMIZATION
 void ArchetypeSpawnerSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 1000000, sysScheduler,0.1);
+	SystemTaskBuilder builder("Spawner", 1000000, sysScheduler,0.1);
 	float dt = 1.0 / 60.0;
 	
 	TaskDependencies deps;
@@ -397,7 +397,7 @@ void  RaycastSystem::schedule(ECSSystemScheduler* sysScheduler)
 	deps2.AddRead<FLastPosition>();
 
 
-	SystemTaskBuilder builder_ray(this->name, 999, sysScheduler,2.5);
+	SystemTaskBuilder builder_ray("Raycast", 999, sysScheduler,2.5);
 
 	//builder_ray.SetPriority(2.5);
 	builder_ray.AddGameTask(deps2,[=](ECS_Registry& reg) {
@@ -442,7 +442,7 @@ void  RaycastSystem::schedule(ECSSystemScheduler* sysScheduler)
 	builder2.AddDependency("EndBarrier");
 
 	SystemTaskBuilder builder3("raycast system: broadcast BP", 0, sysScheduler);
-	builder3.AddDependency(this->name);
+	builder3.AddDependency("Raycast");
 	builder3.AddGameTask(TaskDependencies {},
 		[=](ECS_Registry& reg) {
 
@@ -584,7 +584,7 @@ void CopyTransformToActorSystem::PackTransforms(ECS_Registry& registry)
 
 void  CopyTransformToActorSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 10000, sysScheduler);
+	SystemTaskBuilder builder("CopyBack", 10000, sysScheduler);
 
 	TaskDependencies deps1;
 	deps1.AddWrite < FActorTransform>();
@@ -617,7 +617,7 @@ void  CopyTransformToActorSystem::schedule(ECSSystemScheduler* sysScheduler)
 			transforms.Reset();
 		},ESysTaskFlags::NoECS
 	);
-	builder2.AddDependency(this->name);
+	builder2.AddDependency("CopyBack");
 	builder.AddDependency("Movement");
 	sysScheduler->AddTaskgraph(builder.FinishGraph());
 	sysScheduler->AddTaskgraph(builder2.FinishGraph());
@@ -629,7 +629,7 @@ void CopyTransformToECSSystem::update(ECS_Registry& registry, float dt)
 
 void CopyTransformToECSSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 100, sysScheduler);
+	SystemTaskBuilder builder("CopyTransform", 100, sysScheduler);
 
 	TaskDependencies deps1;
 	deps1.AddWrite < FActorTransform>();
@@ -695,7 +695,7 @@ void MovementSystem::update(ECS_Registry& registry, float dt)
 
 void  MovementSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 300, sysScheduler);
+	SystemTaskBuilder builder("Movement", 300, sysScheduler);
 
 	float dt = 1.0 / 60.0;
 
@@ -750,7 +750,7 @@ void DebugDrawSystem::update(ECS_Registry& registry, float dt)
 
 void  DebugDrawSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 10000, sysScheduler);
+	SystemTaskBuilder builder("DebugDraw", 10000, sysScheduler);
 
 	TaskDependencies deps;
 	deps.AddRead<FPosition>();

@@ -16,7 +16,7 @@ void SpaceshipSystem::update(ECS_Registry& registry, float dt)
 
 void SpaceshipSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 400, sysScheduler);
+	SystemTaskBuilder builder("Spaceship", 400, sysScheduler);
 
 	TaskDependencies deps;
 
@@ -199,7 +199,7 @@ void BoidSystem::UpdateGridmap(ECS_Registry& registry)
 
 void BoidSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name,200,sysScheduler,3);
+	SystemTaskBuilder builder("Boids",200,sysScheduler,3);
 
 
 	TaskDependencies deps1;
@@ -237,7 +237,7 @@ void ExplosionSystem::update(ECS_Registry& registry, float dt)
 
 void ExplosionSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder(this->name, 200000, sysScheduler);
+	SystemTaskBuilder builder("Explosion", 200000, sysScheduler);
 
 	float dt = 1.0 / 60.f;
 	TaskDependencies deps1;

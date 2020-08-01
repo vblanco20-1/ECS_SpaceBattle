@@ -24,23 +24,23 @@ void A_ECSWorldActor::BeginPlay()
 		ECSWorld = MakeUnique<ECS_World>();
 		TaskScheduler = MakeUnique<ECSSystemScheduler>();
 		
-		ECSWorld->CreateAndRegisterSystem<CopyTransformToECSSystem>("CopyTransform");
-		ECSWorld->CreateAndRegisterSystem<BoidSystem>("Boids");
+		ECSWorld->CreateAndRegisterSystem<CopyTransformToECSSystem>();
+		ECSWorld->CreateAndRegisterSystem<BoidSystem>();
 
-		ECSWorld->CreateAndRegisterSystem<MovementSystem>("Movement");
-		ECSWorld->CreateAndRegisterSystem<ExplosionSystem>("Explosion");
-		ECSWorld->CreateAndRegisterSystem<SpaceshipSystem>("Spaceship");
-		ECSWorld->CreateAndRegisterSystem<RaycastSystem>("Raycast");
-		ECSWorld->CreateAndRegisterSystem<LifetimeSystem>("Lifetime");
+		ECSWorld->CreateAndRegisterSystem<MovementSystem>();
+		ECSWorld->CreateAndRegisterSystem<ExplosionSystem>();
+		ECSWorld->CreateAndRegisterSystem<SpaceshipSystem>();
+		ECSWorld->CreateAndRegisterSystem<RaycastSystem>();
+		ECSWorld->CreateAndRegisterSystem<LifetimeSystem>();
 		
-		ECSWorld->CreateAndRegisterSystem<DebugDrawSystem>("DebugDraw");
+		ECSWorld->CreateAndRegisterSystem<DebugDrawSystem>();
 
 		
-		ECSWorld->CreateAndRegisterSystem<StaticMeshDrawSystem>("StaticDraws");
+		ECSWorld->CreateAndRegisterSystem<StaticMeshDrawSystem>();
 
-		ECSWorld->CreateAndRegisterSystem<CopyTransformToActorSystem>("CopyBack");
+		ECSWorld->CreateAndRegisterSystem<CopyTransformToActorSystem>();
 
-		ECSWorld->CreateAndRegisterSystem<ArchetypeSpawnerSystem>("Spawner");		
+		ECSWorld->CreateAndRegisterSystem<ArchetypeSpawnerSystem>();		
 
 		ECSWorld->InitializeSystems(this);
 		
