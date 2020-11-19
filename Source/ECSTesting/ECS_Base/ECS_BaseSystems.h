@@ -20,6 +20,7 @@ struct DebugDrawSystem :public System {
 
 	void schedule(ECSSystemScheduler* sysScheduler) override;
 
+	flecs::query<const FDebugSphere,const FPosition> query;
 };
 
 DECLARE_CYCLE_STAT(TEXT("ECS: Movement Update"), STAT_Movement, STATGROUP_ECS);
@@ -31,6 +32,8 @@ struct MovementSystem :public System {
 
 	void schedule(ECSSystemScheduler* sysScheduler) override;
 
+	flecs::query<FLastPosition, const FPosition> q_positions;
+	flecs::query<const FMovement, FPosition,  FVelocity> q_moves;
 };
 
 DECLARE_CYCLE_STAT(TEXT("ECS: Copy Transform To ECS"), STAT_CopyTransformECS, STATGROUP_ECS);
@@ -42,6 +45,12 @@ struct CopyTransformToECSSystem :public System {
 
 	void schedule(ECSSystemScheduler* sysScheduler) override;
 
+	//queries
+	flecs::query<FCopyTransformToECS, FActorReference> q_copyactor;
+	flecs::query<FCopyTransformToECS, FActorReference, FActorTransform> q_copyactor_tf;
+	flecs::query<const FActorTransform, FPosition> q_tfpos;
+	flecs::query<const FActorTransform, FRotationComponent> q_tfrot;
+	flecs::query<const FActorTransform, FScale> q_tfsc;
 };
 DECLARE_CYCLE_STAT(TEXT("ECS: Copy Transform To Actor"), STAT_CopyTransformActor, STATGROUP_ECS);
 DECLARE_CYCLE_STAT(TEXT("ECS: Pack actor transform"), STAT_PackActorTransform, STATGROUP_ECS);
@@ -61,6 +70,9 @@ struct CopyTransformToActorSystem :public System {
 	};
 
 	TArray<ActorTransformParm> transforms;
+
+	flecs::query<FActorTransform> q_transform;
+	
 };
 
 DECLARE_CYCLE_STAT(TEXT("ECS: Spanwer System"), STAT_ECSSpawn, STATGROUP_ECS);
@@ -74,7 +86,8 @@ struct ArchetypeSpawnerSystem :public System {
 
 
 	void schedule(ECSSystemScheduler* sysScheduler) override;
-
+	flecs::query<FArchetypeSpawner> q_spawners;
+	flecs::query <FArchetypeSpawner, FRandomArcSpawn, FActorTransform> q_arcspawners;
 };
 
 class StaticMeshDrawSystem :public System {
@@ -105,6 +118,10 @@ public:
 
 
 	void schedule(ECSSystemScheduler* sysScheduler) override;
+
+	void pack_transforms();
+
+	flecs::query<FInstancedStaticMesh> q_transform;
 };
 
 DECLARE_CYCLE_STAT(TEXT("ECS: Raycast System"), STAT_ECSRaycast, STATGROUP_ECS);
@@ -134,6 +151,9 @@ struct RaycastSystem :public System {
 	TArray<RaycastUnit> rayUnits;
 	moodycamel::ConcurrentQueue<ExplosionStr> explosions;
 	moodycamel::ConcurrentQueue<ActorBpCall> actorCalls;
+
+	flecs::query<FRaycastResult> q_rays;
+	flecs::query<FMovementRaycast, FPosition, FLastPosition> q_raycreate;
 };
 DECLARE_CYCLE_STAT(TEXT("ECS: Lifetime System"), STAT_Lifetime, STATGROUP_ECS);
 struct LifetimeSystem :public System {
@@ -142,5 +162,6 @@ struct LifetimeSystem :public System {
 
 	void update(ECS_Registry &registry, float dt) override;
 	void schedule(ECSSystemScheduler* sysScheduler) override;
-	
+
+	flecs::query<FLifetime> q_lifetime;
 };

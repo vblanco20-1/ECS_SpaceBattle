@@ -8,8 +8,8 @@ void SpaceshipSystem::update(ECS_Registry& registry, float dt)
 	SCOPE_CYCLE_COUNTER(STAT_Explosion);
 
 
-	registry.view<FSpaceship, FRotationComponent, FVelocity>().each([&, dt](auto entity, FSpaceship& ship, FRotationComponent& rotation, FVelocity& vel) {
-
+	q_ships.each([&, dt](auto entity, FSpaceship& ship, FRotationComponent& rotation, FVelocity& vel) {
+		
 		rotation.rot = vel.vel.Rotation().Quaternion();
 	});
 }
@@ -17,6 +17,8 @@ void SpaceshipSystem::update(ECS_Registry& registry, float dt)
 void SpaceshipSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder("Spaceship", 400, sysScheduler);
+
+	init_query(q_ships, sysScheduler->registry);
 
 	TaskDependencies deps;
 
@@ -32,6 +34,44 @@ void SpaceshipSystem::schedule(ECSSystemScheduler* sysScheduler)
 	);
 
 	sysScheduler->AddTaskgraph(builder.FinishGraph());
+}
+
+
+void BoidSystem::AddToGridmap(flecs::entity ent, FPosition& pos)
+{
+	const FIntVector GridLoc = FIntVector(pos.pos / GRID_DIMENSION);
+	auto SearchGrid = GridMap.Find(GridLoc);
+
+	GridItem item;
+	item.ID.handle = ent.id();
+	item.Position = pos.pos;
+
+
+
+	if (ent.has<FFaction>())
+	{
+		item.Faction = ent.get<FFaction>()->faction;
+	}
+	else
+	{
+		item.Faction = EFaction::Neutral;
+	}
+
+
+	if (!SearchGrid)
+	{
+		TArray<GridItem> NewGrid;
+
+		NewGrid.Reserve(10);
+		NewGrid.Add(item);
+
+		GridMap.Emplace(GridLoc, std::move(NewGrid));
+
+	}
+	else
+	{
+		SearchGrid->Add(item);
+	}
 }
 
 void BoidSystem::update(ECS_Registry& registry, float dt)
@@ -62,23 +102,21 @@ void BoidSystem::UpdateAllBoids(ECS_Registry& registry, float dt)
 
 		TypedLinearMemory<ProjectileData> ProjArray(World->ScratchPad);
 
-		auto ProjectileView = registry.view<FProjectile, FPosition, FVelocity, FFaction>(entt::persistent_t{});
-		//ProjArray.Reset();
+		//auto ProjectileView = registry.view<FProjectile, FPosition, FVelocity, FFaction>( );
+		
 		unsigned int NumProjectiles = 0;
 		//copy projectile data into array so we can do a parallel update later
-		for (auto e : ProjectileView)
-		{
-			ProjectileData Projectile;
-			Projectile.faction = ProjectileView.get<FFaction>(e);
-			Projectile.pos = ProjectileView.get<FPosition>(e);
-			Projectile.proj = ProjectileView.get<FProjectile>(e);
 
-			Projectile.vel = &ProjectileView.get<FVelocity>(e);
+		q_projectiles.each([&](auto et,FProjectile &proj, FPosition& pos, FVelocity& vel, FFaction& fact) {
+			ProjectileData Projectile;
+			Projectile.faction = fact;
+			Projectile.pos = pos;
+			Projectile.proj = proj;
+
+			Projectile.vel = &vel;
 			ProjArray.push_back(Projectile);
 			NumProjectiles++;
-			//ProjArray.Add(Projectile);
-		}
-
+		});
 
 		ParallelFor(NumProjectiles, [&](int32 Index)
 			{
@@ -118,27 +156,21 @@ void BoidSystem::UpdateAllBoids(ECS_Registry& registry, float dt)
 		SCOPE_CYCLE_COUNTER(STAT_Boids);
 
 
-		//auto spaceshipEnd = SpaceshipView.size()
-
-		//int nShips = registry.view<FSpaceship>().size();
-		auto SpaceshipView = registry.view<FSpaceship, FPosition, FVelocity, FFaction>(entt::persistent_t{});
+		//auto SpaceshipView = registry.view<FSpaceship, FPosition, FVelocity, FFaction>( );
 
 		TypedLinearMemory<SpaceshipData> SpaceshipArray(World->ScratchPad);
 		unsigned int NumShips = 0;
-		//SpaceshipArray.Reset();// Spaces//nShips);
 		//copy spaceship data into array so we can do a paralle update later
-		for (auto e : SpaceshipView)
-		{
+		q_ships.each([&](auto et, FSpaceship& ship, FPosition& pos, FVelocity& vel, FFaction& fact) {
 			SpaceshipData Ship;
-			Ship.faction = SpaceshipView.get<FFaction>(e);
-			Ship.pos = SpaceshipView.get<FPosition>(e);
-			Ship.ship = SpaceshipView.get<FSpaceship>(e);
+			Ship.faction = fact;
+			Ship.pos = pos;
+			Ship.ship = ship;
 
-			Ship.vel = &SpaceshipView.get<FVelocity>(e);
-			NumShips++;
+			Ship.vel = &vel;
 			SpaceshipArray.push_back(Ship);
-			//SpaceshipArray.Add(Ship);
-		}
+			NumShips++;
+		});		
 
 		ParallelFor(NumShips, [&](int32 Index)
 			{
@@ -183,24 +215,23 @@ void BoidSystem::UpdateAllBoids(ECS_Registry& registry, float dt)
 void BoidSystem::UpdateGridmap(ECS_Registry& registry)
 {//add everything to the gridmap
 	GridMap.Empty(50);
-	auto GridView = registry.view<FGridMap, FPosition>();
-
 	{
 		SCOPE_CYCLE_COUNTER(STAT_GridmapUpdate);
-		for (auto e : GridView)
-		{
-
-			EntityHandle handle(e);
-
-			AddToGridmap(handle, GridView.get<FPosition>(e));
-		}
+		q_grid.each([&](auto et, FGridMap grid, FPosition& pos) {
+			
+			AddToGridmap(et, pos);
+		});
 	}
 }
 
 void BoidSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
-	SystemTaskBuilder builder("Boids",200,sysScheduler,3);
+	SystemTaskBuilder builder("Boids", 200, sysScheduler, 3);
 
+
+	init_query(q_grid,sysScheduler->registry);
+	init_query(q_ships, sysScheduler->registry);
+	init_query(q_projectiles, sysScheduler->registry);
 
 	TaskDependencies deps1;
 	deps1.AddRead < FPosition >();
@@ -239,6 +270,8 @@ void ExplosionSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder("Explosion", 200000, sysScheduler);
 
+	init_query(q_explosions, sysScheduler->registry);
+
 	float dt = 1.0 / 60.f;
 	TaskDependencies deps1;
 
@@ -252,17 +285,14 @@ void ExplosionSystem::schedule(ECSSystemScheduler* sysScheduler)
 
 			DeletionContext* del = DeletionContext::GetFromRegistry(reg);
 
-			auto AllExplosionsView = reg.view<FExplosion>();
-			for (auto e : AllExplosionsView) {
-				FExplosion& ex = AllExplosionsView.get(e);
-
+			q_explosions.each([&](auto et, FExplosion& ex, FScale& s) {
 				ex.LiveTime += dt;
 				if (ex.LiveTime > ex.Duration)
 				{
 
-					del->AddToQueue(e);
+					del->AddToQueue(et.id());
 				}
-			}
+			});
 		}
 	);
 
@@ -273,9 +303,8 @@ void ExplosionSystem::schedule(ECSSystemScheduler* sysScheduler)
 
 	builder.AddTask(deps,
 		[=](ECS_Registry& reg) {
-			reg.view<FExplosion, FScale>().each([&, dt](auto entity, FExplosion& ex, FScale& scale) {
-
-				scale.scale = FVector((ex.LiveTime / ex.Duration) * ex.MaxScale);
+			q_explosions.each([&](auto et, FExplosion& ex, FScale& s) {
+				s.scale = FVector((ex.LiveTime / ex.Duration) * ex.MaxScale);
 			});
 		}
 	);

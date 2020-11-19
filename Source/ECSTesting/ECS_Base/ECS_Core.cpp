@@ -22,14 +22,23 @@ void ECS_World::UpdateSystem(FString name, float Dt)
 	GetSystem(name)->update(registry, Dt);
 }
 
+struct DeletionContextHold {
+	TSharedPtr<DeletionContext> ctx;
+};
+
 DeletionContext* DeletionContext::GetFromRegistry(ECS_Registry& registry)
 {
-	if (registry.view<DeletionContext>().size() == 0) {
-		EntityID id = registry.create();
-		registry.assign<DeletionContext>(id);
+	if (registry.has<DeletionContextHold>())
+	{
+		return registry.get<DeletionContextHold>()->ctx.Get();
 	}
+	else {
+		DeletionContextHold holder;
+		holder.ctx = TSharedPtr<DeletionContext>(new DeletionContext());
 
-	return registry.view<DeletionContext>().raw();
+		registry.set<DeletionContextHold>(std::move(holder));
+	}
+	return nullptr;
 }
 
 void DeletionContext::AddToQueue(EntityID entity)

@@ -3,7 +3,8 @@
 
 //#include "entt/entt.hpp"
 
-#include "entt/entity/registry.hpp"
+//#include "entt/entity/registry.hpp"
+#include "flecs/flecs.h"
 #include "concurrentqueue.h"
 #include <vector>
 #include "ECSTesting.h"
@@ -13,14 +14,14 @@
 DECLARE_CYCLE_STAT(TEXT("ECS: Total System Update"), STAT_TotalUpdate, STATGROUP_ECS);
 
 
-using EntityID = uint32_t;
-using ECS_Registry = entt::Registry<EntityID>;
+using EntityID = flecs::entity_t;
+using ECS_Registry = flecs::world;//entt::Registry<EntityID>;
 class ECS_World;
 class AActor;
 
 struct EntityHandle {
-	EntityHandle(EntityID h = 0): handle(h) {};
-	EntityID handle;
+	//EntityHandle(EntityID h = {}) : handle(h) {};
+	EntityID handle{};
 };
 
 class SystemTaskChain;
@@ -130,12 +131,13 @@ public:
 	}
 	EntityHandle NewEntity() {
 		EntityHandle h;
-		h.handle= registry.create();
+		h.handle = ecs_new(registry.c_ptr(), 0);
 		return h;
 	}
 	void DestroyEntity(EntityHandle ent)
 	{
-		registry.destroy(ent.handle);
+		
+		ecs_delete(registry.c_ptr(), ent.handle);
 	}
 
 	System* GetSystem(FString name);
@@ -152,6 +154,20 @@ public:
 
 	std::vector<System*> systems;
 	TMap<FString, System*> namedSystems;
-	ECS_Registry registry;
-	
+	ECS_Registry registry;	
 };
+template<typename C>
+void init_comp(ECS_World* world, EntityHandle et, C Value)
+{
+	flecs::entity e(*world->GetRegistry(), (et.handle));
+	e.set<C>(Value);
+}; 
+
+template<typename ...Q>
+void init_query(flecs::query<Q...>& q, ECS_Registry* reg)
+{
+	if (!q.c_ptr())
+	{
+		q.init(*reg);
+	}
+}

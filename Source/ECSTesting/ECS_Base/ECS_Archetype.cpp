@@ -15,8 +15,7 @@ AECS_Archetype::AECS_Archetype()
 
 EntityHandle AECS_Archetype::CreateNewEntityFromThis(ECS_World * _ECS)
 {
-	EntityHandle h;
-	h.handle = _ECS->GetRegistry()->create();
+	EntityHandle h = _ECS->NewEntity();
 
 	for (auto c : GetComponents())
 	{

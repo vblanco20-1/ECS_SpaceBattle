@@ -49,6 +49,9 @@ void  StaticMeshDrawSystem::schedule(ECSSystemScheduler* sysScheduler)
 
 	float dt = 1.0 / 60.0;
 
+
+	init_query(q_transform, sysScheduler->registry);
+
 	{
 
 	TaskDependencies deps;
@@ -62,16 +65,9 @@ void  StaticMeshDrawSystem::schedule(ECSSystemScheduler* sysScheduler)
 	builder.AddTask(TaskDependencies{}, [=](ECS_Registry& reg) {
 			SCOPE_CYCLE_COUNTER(STAT_InstancedMeshPrepare);
 			//copy transforms into the ISM RenderTransform
-			reg.view<FInstancedStaticMesh, FPosition>().each([&, dt](auto entity, FInstancedStaticMesh& ism, FPosition& pos) {
-				ism.RenderTransform.SetLocation(pos.pos);
-				});
-			reg.view<FInstancedStaticMesh, FRotationComponent>().each([&, dt](auto entity, FInstancedStaticMesh& ism, FRotationComponent& rot) {
-				ism.RenderTransform.SetRotation(rot.rot);
-				});
-			reg.view<FInstancedStaticMesh, FScale>().each([&, dt](auto entity, FInstancedStaticMesh& ism, FScale& sc) {
-				ism.RenderTransform.SetScale3D(sc.scale);
-				});	
-	});
+
+			pack_transforms();
+		});
 
 	}
 	{
@@ -99,12 +95,8 @@ void  StaticMeshDrawSystem::schedule(ECSSystemScheduler* sysScheduler)
 
 				{
 					SCOPE_CYCLE_COUNTER(STAT_InstancedMeshDraw);
+					q_transform.each([&](auto et, FInstancedStaticMesh& mesh) {
 
-					auto view = reg.view<FInstancedStaticMesh>();
-
-					for (auto entity : view) {
-
-						FInstancedStaticMesh& mesh = view.get(entity);
 
 						auto MeshData = GetInstancedMeshForMesh(mesh.mesh);
 						auto RenderMesh = MeshData->ISM;
@@ -120,8 +112,7 @@ void  StaticMeshDrawSystem::schedule(ECSSystemScheduler* sysScheduler)
 							RenderMesh->UpdateInstanceTransform(MeshData->rendered, RenderTransform, true, false);
 						}
 						MeshData->rendered++;
-					}
-
+					});
 				}
 				{
 					SCOPE_CYCLE_COUNTER(STAT_InstancedMeshClean)
@@ -150,6 +141,38 @@ void  StaticMeshDrawSystem::schedule(ECSSystemScheduler* sysScheduler)
 	}
 
 	sysScheduler->AddTaskgraph(builder.FinishGraph());
+}
+
+void StaticMeshDrawSystem::pack_transforms()
+{
+	q_transform.iter([&](flecs::iter it, FInstancedStaticMesh* t) {
+
+		if (it.has_column<FPosition>())
+		{
+			auto pos = it.table_column<const FPosition>();
+			for (auto i : it)
+			{
+				t[i].RenderTransform.SetLocation(pos[i].pos);
+			}
+		}
+
+		if (it.has_column<FRotationComponent>())
+		{
+			auto pos = it.table_column<const FRotationComponent>();
+			for (auto i : it)
+			{
+				t[i].RenderTransform.SetRotation(pos[i].rot);
+			}
+		}
+		if (it.has_column<FScale>())
+		{
+			auto pos = it.table_column<const FScale>();
+			for (auto i : it)
+			{
+				t[i].RenderTransform.SetScale3D(pos[i].scale);
+			}
+		}
+		});
 }
 
 EntityHandle ArchetypeSpawnerSystem::SpawnFromArchetype(ECS_Registry& registry, TSubclassOf<AECS_Archetype>& ArchetypeClass)
@@ -197,6 +220,10 @@ void ArchetypeSpawnerSystem::schedule(ECSSystemScheduler* sysScheduler)
 	SystemTaskBuilder builder("Spawner", 1000000, sysScheduler,0.1);
 	float dt = 1.0 / 60.0;
 	
+
+	init_query(q_arcspawners, sysScheduler->registry);
+	init_query(q_spawners, sysScheduler->registry);
+
 	TaskDependencies deps;
 
 	deps.AddWrite<FArchetypeSpawner>();
@@ -208,11 +235,9 @@ void ArchetypeSpawnerSystem::schedule(ECSSystemScheduler* sysScheduler)
 		SCOPE_CYCLE_COUNTER(STAT_ECSSpawn);
 
 		//exclusively update timing
-		auto SpawnerView = reg.view<FArchetypeSpawner>();
-		for (auto e : SpawnerView)
-		{
-			SpawnerView.get(e).TimeUntilSpawn -= dt;
-		}
+		q_spawners.each([dt](auto e, FArchetypeSpawner& spawner) {
+			spawner.TimeUntilSpawn -= dt;
+		});
 	});
 	
 
@@ -221,76 +246,70 @@ void ArchetypeSpawnerSystem::schedule(ECSSystemScheduler* sysScheduler)
 			//return;
 			SCOPE_CYCLE_COUNTER(STAT_ECSSpawn);
 		//spawn from arc and actortransform
-		auto SpawnerArcView = reg.view<FArchetypeSpawner, FRandomArcSpawn, FActorTransform>();
-		for (auto e : SpawnerArcView)
-		{
-			const FTransform& ActorTransform = SpawnerArcView.get<FActorTransform>(e).transform;
-			FArchetypeSpawner& spawner = SpawnerArcView.get<FArchetypeSpawner>(e);
-			const FRandomArcSpawn& arc = SpawnerArcView.get<FRandomArcSpawn>(e);
-
-			if (spawner.TimeUntilSpawn < 0)
-			{
-				if (spawner.ArchetypeClass)
+			reg.defer_begin();
+			
+			q_arcspawners.each([&](auto e, FArchetypeSpawner& spawner, FRandomArcSpawn& arc, FActorTransform& ActorTransform) {
+				
+				if (spawner.TimeUntilSpawn < 0)
 				{
-					EntityHandle h = SpawnFromArchetype(reg, spawner.ArchetypeClass);
-					reg.accommodate<FPosition>(h.handle, ActorTransform.GetLocation());
-
-					if (reg.has<FFaction>(e))
+					if (spawner.ArchetypeClass)
 					{
-						reg.accommodate<FFaction>(h.handle, reg.get<FFaction>(e));
+						EntityHandle h = SpawnFromArchetype(reg, spawner.ArchetypeClass);
+						flecs::entity spawned{ reg,h.handle };
+						spawned.set<FPosition>({ ActorTransform.transform.GetLocation() });
+
+						if (e.has<FFaction>())
+						{
+							spawned.set<FFaction>(*e.get<FFaction>());
+						}
+
+						FVelocity vel;
+						const float VelMagnitude = World->rng.FRandRange(arc.MinVelocity, arc.MaxVelocity);
+						const float Arc = FMath::DegreesToRadians(World->rng.FRandRange(arc.MinAngle, arc.MaxAngle));
+
+
+						FVector ArcVel = World->rng.VRandCone(FVector(1.0, 0.0, 0.0), Arc) * VelMagnitude;
+
+						FVector BulletVelocity = ActorTransform.transform.GetRotation().RotateVector(ArcVel);
+						spawned.set<FVelocity>(BulletVelocity);
 					}
 
-					FVelocity vel;
-					const float VelMagnitude = World->rng.FRandRange(arc.MinVelocity, arc.MaxVelocity);
-					const float Arc = FMath::DegreesToRadians(World->rng.FRandRange(arc.MinAngle, arc.MaxAngle));
-
-
-					FVector ArcVel = World->rng.VRandCone(FVector(1.0, 0.0, 0.0), Arc) * VelMagnitude;
-
-					FVector BulletVelocity = ActorTransform.GetRotation().RotateVector(ArcVel);
-					reg.accommodate<FVelocity>(h.handle, BulletVelocity);
+					if (spawner.bLoopSpawn)
+					{
+						spawner.TimeUntilSpawn = spawner.SpawnRate;
+					}
+					else
+					{
+						e.remove<FArchetypeSpawner>();
+					}
 				}
-
-				if (spawner.bLoopSpawn)
+			});
+		
+			//Spawn with basic position
+			q_spawners.each([&](auto e, FArchetypeSpawner& spawner) {
+				if (!e.has<FPosition>()) return;
+				const FVector& SpawnPosition = e.get<FPosition>()->pos;
+				if (spawner.TimeUntilSpawn < 0)
 				{
-					spawner.TimeUntilSpawn = spawner.SpawnRate;
-				}
-				else
-				{
-					reg.remove<FArchetypeSpawner>(e);
-				}
-			}
-		}
+					if (IsValid(spawner.ArchetypeClass))
+					{
+						EntityHandle h = SpawnFromArchetype(reg, spawner.ArchetypeClass);
+						flecs::entity spawned{ reg,h.handle };
+						spawned.set<FPosition>(FPosition{ SpawnPosition });
+					}
 
-		//Spawn with basic position
-		auto SpawnerPositionView = reg.view<FArchetypeSpawner>();
-		for (auto e : SpawnerPositionView)
-		{
-			assert(reg.has<FArchetypeSpawner>(e));
-			assert(reg.has<FPosition>(e));
-
-			const FVector& SpawnPosition = reg.get<FPosition>(e).pos;
-			FArchetypeSpawner& spawner = reg.get<FArchetypeSpawner>(e);
-
-			
-			if (spawner.TimeUntilSpawn < 0)
-			{
-				if (IsValid(spawner.ArchetypeClass))
-				{
-					EntityHandle h = SpawnFromArchetype(reg, spawner.ArchetypeClass);
-					reg.accommodate<FPosition>(h.handle, SpawnPosition);
+					if (spawner.bLoopSpawn)
+					{
+						spawner.TimeUntilSpawn = spawner.SpawnRate;
+					}
+					else
+					{
+						e.remove<FArchetypeSpawner>();
+					}
 				}
-
-				if (spawner.bLoopSpawn)
-				{
-					spawner.TimeUntilSpawn = spawner.SpawnRate;
-				}
-				else
-				{
-					reg.remove<FArchetypeSpawner>(e);
-				}
-			}
-		}
+			});
+		
+			reg.defer_end();
 		}
 	);
 
@@ -306,13 +325,12 @@ void RaycastSystem::CheckRaycasts(ECS_Registry& registry, float dt, UWorld* Game
 {
 	rayUnits.Reset();
 	//check all the raycast results from the async raycast
-	registry.view<FRaycastResult>().each([&, dt](auto entity, FRaycastResult& ray) {
-
+	q_rays.each([&, dt](auto entity, FRaycastResult& ray) {
+	
 		if (GameWorld->IsTraceHandleValid(ray.handle, false))
 		{
-			rayUnits.Add({ entity, &ray });
-		}
-
+			rayUnits.Add({ entity.id(), &ray });
+		}	
 	});
 
 	ParallelFor(rayUnits.Num(), [&](auto i) {
@@ -334,8 +352,9 @@ void RaycastSystem::CheckRaycasts(ECS_Registry& registry, float dt, UWorld* Game
 					actorCalls.enqueue({ act });
 				}
 
+				flecs::entity et{ registry,entity };
 				//if the entity was a projectile, create explosion and destroy it
-				if (registry.has<FProjectile>(entity))
+				if(et.has<FProjectile>())
 				{
 					FVector ExplosionPoint = tdata.OutHits[0].ImpactPoint;
 
@@ -348,25 +367,26 @@ void RaycastSystem::CheckRaycasts(ECS_Registry& registry, float dt, UWorld* Game
 
 void RaycastSystem::CreateExplosion(ECS_Registry& registry, EntityID entity, FVector ExplosionPoint)
 {
-	auto explosionclass = registry.get<FProjectile>(entity).ExplosionArchetypeClass;
+	flecs::entity e{ registry,entity };
+
+	auto explosionclass = e.get<const FProjectile>()->ExplosionArchetypeClass;
 	if (explosionclass)
 	{
 		//create new entity to spawn explosion
-		auto h = registry.create();
-		registry.assign<FPosition>(h);
-		registry.assign<FLifetime>(h);
-		registry.assign<FArchetypeSpawner>(h);
-		registry.get<FPosition>(h).pos = ExplosionPoint;
-		registry.get<FLifetime>(h).LifeLeft = 0.1;
-		FArchetypeSpawner& spawn = registry.get<FArchetypeSpawner>(h);
+		auto h = ecs_new(registry.c_ptr(), 0);
+		flecs::entity spawner{ registry,h };
+		
+		spawner.set<FPosition>({ ExplosionPoint });
+		spawner.set<FLifetime>({ 0.1 });
+
+		FArchetypeSpawner spawn;
 		spawn.bLoopSpawn = false;
 		spawn.ArchetypeClass = explosionclass;
 		spawn.SpawnRate = 1;
 		spawn.TimeUntilSpawn = 0.0;
 		spawn.Canary = 69;
+		spawner.set<FArchetypeSpawner>({ spawn });
 	}
-
-	//registry.accommodate<FDestroy>(entity);
 }
 
 DECLARE_CYCLE_STAT(TEXT("ECS: Raycast BP"), STAT_RaycastBP, STATGROUP_ECS);
@@ -375,6 +395,9 @@ DECLARE_CYCLE_STAT(TEXT("ECS: Raycast Enqueue"), STAT_RaycastResults, STATGROUP_
 void  RaycastSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder("RayCheck", 999, sysScheduler);
+
+	init_query(q_rays, sysScheduler->registry);
+	init_query(q_raycreate, sysScheduler->registry);
 
 	TaskDependencies deps1;
 	float dt = 1.0 / 60.0;
@@ -406,15 +429,20 @@ void  RaycastSystem::schedule(ECSSystemScheduler* sysScheduler)
 
 		UWorld* GameWorld = OwnerActor->GetWorld();
 		//movement raycast needs a "last position" component
-		reg.view<FMovementRaycast, FPosition, FLastPosition>().each([&, dt](auto entity, FMovementRaycast& ray, FPosition& pos, FLastPosition& lastPos) {
+
+		reg.defer_begin();
+
+		q_raycreate.each([&, dt](auto entity, FMovementRaycast& ray, FPosition& pos, FLastPosition& lastPos) {
 
 			if (pos.pos != lastPos.pos)
 			{
 				FTraceHandle hit = GameWorld->AsyncLineTraceByChannel(EAsyncTraceType::Single, lastPos.pos, pos.pos, ray.RayChannel);
 
-				reg.accommodate<FRaycastResult>(entity, hit);
+				entity.set<FRaycastResult>(hit);
 			}
 		});
+
+		reg.defer_end();
 	});
 
 	builder_ray.AddDependency("RayCheck");
@@ -429,14 +457,16 @@ void  RaycastSystem::schedule(ECSSystemScheduler* sysScheduler)
 			SCOPE_CYCLE_COUNTER(STAT_RaycastExplosions);
 
 			DeletionContext* del = DeletionContext::GetFromRegistry(reg);
-
+			reg.defer_begin();
 			bulk_dequeue(explosions, [&reg,&del,this](const ExplosionStr& ex) {
-				if (reg.has<FProjectile>(ex.et))
+				flecs::entity e{ reg,ex.et };
+				if (e.has<FProjectile>())
 				{
 					CreateExplosion(reg, ex.et, ex.explosionPoint);
 				}
 				del->AddToQueue(ex.et);
-			});			
+			});		
+			reg.defer_end();
 		}
 	);
 	builder2.AddDependency("EndBarrier");
@@ -482,6 +512,8 @@ DECLARE_CYCLE_STAT(TEXT("ECS: Lifetime Delete"), STAT_LifeDelete, STATGROUP_ECS)
 void  LifetimeSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder_end("EndBarrier", 100000, sysScheduler);
+	init_query(q_lifetime, sysScheduler->registry);
+
 
 	builder_end.AddDependency("Movement");
 	builder_end.AddTask(
@@ -507,20 +539,17 @@ void  LifetimeSystem::schedule(ECSSystemScheduler* sysScheduler)
 			DeletionContext* del = DeletionContext::GetFromRegistry(reg);
 
 			//tick the lifetime timers
-			auto LifetimeView = reg.view<FLifetime>();
-			for (auto e : LifetimeView)
-			{
-				auto& Deleter = LifetimeView.get(e);
+			
+			q_lifetime.each([&](auto e, FLifetime& Deleter) {
 
-				Deleter.LifeLeft -= 1.0/60.0;
+				Deleter.LifeLeft -= 1.0 / 60.0;
 
 				if (Deleter.LifeLeft < 0)
 				{
-					del->AddToQueue(e);
+					del->AddToQueue(e.id());
 				}
-			}
-		}
-	);
+			});
+		});
 
 	sysScheduler->AddTaskgraph(builder.FinishGraph());
 
@@ -534,9 +563,10 @@ void  LifetimeSystem::schedule(ECSSystemScheduler* sysScheduler)
 			DeletionContext* del = DeletionContext::GetFromRegistry(reg);
 
 			bulk_dequeue(del->entitiesToDelete, [&](EntityID id) {
-				if (reg.valid(id))
+				flecs::entity et{ reg,id };
+				if (et.is_alive())
 				{
-					reg.destroy(id);
+					et.destruct();
 				}
 			});
 		}
@@ -553,38 +583,58 @@ void CopyTransformToActorSystem::PackTransforms(ECS_Registry& registry)
 {
 	SCOPE_CYCLE_COUNTER(STAT_PackActorTransform);
 	{
+		q_transform.iter([&](flecs::iter it, FActorTransform* t) {
 
-		//fill ActorTransform from separate components		
-		registry.view<FActorTransform, FPosition>().each([&](auto entity, FActorTransform& transform, FPosition& pos) {
-			transform.transform.SetLocation(pos.pos);
-			});
-		registry.view<FActorTransform, FRotationComponent>().each([&](auto entity, FActorTransform& transform, FRotationComponent& rot) {
-			transform.transform.SetRotation(rot.rot);
-			});
-		registry.view<FActorTransform, FScale>().each([&](auto entity, FActorTransform& transform, FScale& sc) {
+			if (it.has_column<FPosition>())
+			{
+				auto pos = it.table_column<const FPosition>();
+				for (auto i : it)
+				{
+					t[i].transform.SetLocation(pos[i].pos);
+				}
+			}
 
-			transform.transform.SetScale3D(sc.scale);
-			});
+			if (it.has_column<FRotationComponent>())
+			{
+				auto pos = it.table_column<const FRotationComponent>();
+				for (auto i : it)
+				{
+					t[i].transform.SetRotation(pos[i].rot);
+				}
+			}
+			if (it.has_column<FScale>())
+			{
+				auto pos = it.table_column<const FScale>();
+				for (auto i : it)
+				{
+					t[i].transform.SetScale3D(pos[i].scale);
+				}
+			}
+			if (it.has_column<FCopyTransformToActor>())
+			{
+				if (it.has_column<FActorReference>())
+				{
+					auto actors = it.table_column<FActorReference>();
+					for (auto i : it)
+					{
+						if (actors[i].ptr.IsValid())
+						{
+							transforms.Add({ actors[i].ptr,t[i].transform });
+						}
+					}
+				}
+			}
+		});
 	}
 
-	//copy transforms from actor into FActorTransform	
-	auto TransformView = registry.view<FCopyTransformToActor, FActorReference, FActorTransform>();
-	for (auto e : TransformView)
-	{
-		const FTransform& transform = TransformView.get<FActorTransform>(e).transform;
-		FActorReference& actor = TransformView.get<FActorReference>(e);
-
-		if (actor.ptr.IsValid())
-		{
-			//actor.ptr->SetActorTransform(transform);
-			transforms.Add({ actor.ptr,transform });
-		}
-	}
 }
 
 void  CopyTransformToActorSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder("CopyBack", 10000, sysScheduler);
+
+	
+	init_query(q_transform, sysScheduler->registry);
 
 	TaskDependencies deps1;
 	deps1.AddWrite < FActorTransform>();
@@ -627,9 +677,15 @@ void CopyTransformToECSSystem::update(ECS_Registry& registry, float dt)
 {
 }
 
+
 void CopyTransformToECSSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder("CopyTransform", 100, sysScheduler);
+	init_query(q_copyactor_tf, sysScheduler->registry);
+	init_query(q_copyactor, sysScheduler->registry);
+	init_query(q_tfpos, sysScheduler->registry);
+	init_query(q_tfrot, sysScheduler->registry);
+	init_query(q_tfsc, sysScheduler->registry);
 
 	TaskDependencies deps1;
 	deps1.AddWrite < FActorTransform>();
@@ -640,21 +696,29 @@ void CopyTransformToECSSystem::schedule(ECSSystemScheduler* sysScheduler)
 	//builder.AddSyncTask(//deps1,
 		[=](ECS_Registry& reg) {
 			SCOPE_CYCLE_COUNTER(STAT_CopyTransformECS);
-			//copy transforms from actor into FActorTransform
-			auto ActorTransformView = reg.view<FCopyTransformToECS, FActorReference>();
-			for (auto e : ActorTransformView)
-			{
-				if (!reg.has<FActorTransform>()) {
 
-					
-					FActorReference& actor = ActorTransformView.get<FActorReference>(e);
-					if (actor.ptr.IsValid())
+			reg.defer_begin();
+			q_copyactor.each([&](flecs::entity e, FCopyTransformToECS& p, FActorReference& v) {
+				//if (!e.has<FActorTransform>()) 
+				{
+					if (v.ptr.IsValid())
 					{
-						const FTransform& ActorTransform = actor.ptr->GetActorTransform();
-						reg.accommodate<FActorTransform>(e, ActorTransform);
+						const FTransform& ActorTransform = v.ptr->GetActorTransform();
+						e.set<FActorTransform>(ActorTransform);
 					}
 				}
-			}
+			});
+			reg.defer_end();
+
+			q_copyactor_tf.each([&](flecs::entity e, FCopyTransformToECS& p, FActorReference& v, FActorTransform& tf) {
+				{
+					if (v.ptr.IsValid())
+					{
+						const FTransform& ActorTransform = v.ptr->GetActorTransform();
+						tf.transform = ActorTransform;
+					}
+				}
+			});
 		}
 	);
 
@@ -670,19 +734,15 @@ void CopyTransformToECSSystem::schedule(ECSSystemScheduler* sysScheduler)
 			[=](ECS_Registry& reg) {
 
 				SCOPE_CYCLE_COUNTER(STAT_UnpackActorTransform);
-				//unpack from ActorTransform into the separate transform components, only if the entity does have that component
-				reg.view<FActorTransform, FPosition>().each([&](auto entity, FActorTransform& transform, FPosition& pos) {
-
-		pos.pos = transform.transform.GetLocation();
-		});
-				reg.view<FActorTransform, FRotationComponent>().each([&](auto entity, FActorTransform& transform, FRotationComponent& rot) {
-
-		rot.rot = transform.transform.GetRotation();
-		});
-				reg.view<FActorTransform, FScale>().each([&](auto entity, FActorTransform& transform, FScale& sc) {
-
-		sc.scale = transform.transform.GetScale3D();
-		});
+				q_tfpos.each([](auto entity, const FActorTransform& transform, FPosition& pos) {
+					pos.pos = transform.transform.GetLocation();
+				});
+				q_tfrot.each([](auto entity, const FActorTransform& transform, FRotationComponent& rot) {
+					rot.rot = transform.transform.GetRotation();
+					});
+				q_tfsc.each([](auto entity, const FActorTransform& transform, FScale& sc) {
+					sc.scale = transform.transform.GetScale3D();
+				});
 			}
 	);
 
@@ -699,24 +759,32 @@ void  MovementSystem::schedule(ECSSystemScheduler* sysScheduler)
 
 	float dt = 1.0 / 60.0;
 
+	init_query(q_positions, sysScheduler->registry);
+	init_query(q_moves, sysScheduler->registry);
+
 	TaskDependencies deps;
 	deps.AddWrite<FPosition>();
 	deps.AddWrite<FVelocity>();
 	deps.AddWrite<FLastPosition>();
 	deps.AddRead<FMovement>();
 	deps.AddRead<FMovementRaycast>();
+	deps.AddWrite<ECS_Registry>();
 
 	builder.AddDependency("Boids");
 	builder.AddTask(
 		deps,
-		[=](ECS_Registry& reg) {
+		[=](ECS_Registry& reg) {			
+
 			//movement raycast gets a "last position" component
-			reg.view<FMovementRaycast, FPosition>().each([&, dt](auto entity, FMovementRaycast& ray, FPosition& pos) {
-				reg.accommodate<FLastPosition>(entity, pos.pos);
+			auto raypos_filter = flecs::filter(reg).include<FMovementRaycast>().include<FPosition>().exclude<FLastPosition>();
+			
+			reg.add<FLastPosition>(raypos_filter);
+
+			q_positions.each([&, dt](auto entity, FLastPosition& lastpos,const FPosition& pos) {
+				lastpos.pos = pos.pos;
 			});
 
-			//add gravity and basic movement from velocity
-			reg.view<FMovement, FPosition, FVelocity>().each([&, dt](auto entity, FMovement& m, FPosition& pos, FVelocity& vel) {
+			q_moves.each([&, dt](auto entity, const FMovement& m, FPosition& pos, FVelocity& vel) {
 
 				//gravity
 				const FVector gravity = FVector(0.f, 0.f, -980) * m.GravityStrenght;
@@ -740,12 +808,12 @@ void DebugDrawSystem::update(ECS_Registry& registry, float dt)
 	}
 
 	elapsed = UpdateRate;
-
-	registry.view<FDebugSphere, FPosition>().each([&, dt](auto entity, FDebugSphere& ds, FPosition& pos) {
+	
+	query.each([&, dt](auto entity,const FDebugSphere& ds, const FPosition& pos) {
 
 		SCOPE_CYCLE_COUNTER(STAT_DebugDraw);
 		DrawDebugSphere(OwnerActor->GetWorld(), pos.pos, ds.radius, 12, ds.color, true, UpdateRate);
-	});
+		});
 }
 
 void  DebugDrawSystem::schedule(ECSSystemScheduler* sysScheduler)
@@ -756,6 +824,8 @@ void  DebugDrawSystem::schedule(ECSSystemScheduler* sysScheduler)
 	deps.AddRead<FPosition>();
 	
 	deps.AddRead<FDebugSphere>();
+
+	query.init(*sysScheduler->registry);
 
 	builder.AddGameTask(deps,
 		[=](ECS_Registry& reg) {

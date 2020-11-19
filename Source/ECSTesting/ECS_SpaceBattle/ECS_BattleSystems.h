@@ -19,6 +19,8 @@ struct ExplosionSystem :public System {
 
 
 	void schedule(ECSSystemScheduler* sysScheduler) override;
+
+	flecs::query <FExplosion, FScale> q_explosions;
 };
 
 struct SpaceshipSystem :public System {
@@ -27,6 +29,8 @@ struct SpaceshipSystem :public System {
 	void update(ECS_Registry &registry, float dt) override;
 
 	void schedule(ECSSystemScheduler* sysScheduler) override;
+
+	flecs::query<FSpaceship, FRotationComponent, FVelocity> q_ships;
 };
 
 
@@ -65,40 +69,7 @@ struct BoidSystem :public System {
 	TArray<SpaceshipData> SpaceshipArray;
 	TMap<FIntVector, TArray<GridItem>> GridMap;
 
-	void AddToGridmap(EntityHandle ent, FPosition&pos)
-	{
-		const FIntVector GridLoc = FIntVector(pos.pos / GRID_DIMENSION);
-		auto SearchGrid = GridMap.Find(GridLoc);
-
-		GridItem item;
-		item.ID = ent;
-		item.Position = pos.pos;
-
-		if (World->GetRegistry()->has<FFaction>(ent.handle))
-		{
-			item.Faction = World->GetRegistry()->get<FFaction>(ent.handle).faction;
-		}
-		else
-		{
-			item.Faction = EFaction::Neutral;
-		}
-
-
-		if (!SearchGrid)
-		{
-			TArray<GridItem> NewGrid;
-
-			NewGrid.Reserve(10);
-			NewGrid.Add(item);
-
-			GridMap.Emplace(GridLoc, std::move(NewGrid));
-
-		}
-		else
-		{
-			SearchGrid->Add(item);
-		}
-	}
+	void AddToGridmap(flecs::entity ent, FPosition&pos);
 	void Foreach_EntitiesInRadius(float radius, FVector origin, TFunctionRef<void(GridItem&)> Body)
 	{
 		const float radSquared = radius * radius;
@@ -137,4 +108,8 @@ struct BoidSystem :public System {
 
 
 	void schedule(ECSSystemScheduler* sysScheduler) override;
+
+	flecs::query <FGridMap, FPosition> q_grid;
+	flecs::query <FSpaceship, FPosition, FVelocity, FFaction> q_ships;
+	flecs::query<FProjectile, FPosition, FVelocity, FFaction > q_projectiles;
 };

@@ -54,7 +54,7 @@ namespace ECSCVars
 	FAutoConsoleVariableRef CVarParallelECS(
 		TEXT("p.parallelECS"),
 		EnableParallel,
-		TEXT("Whether to enable mesh smoothing on listen servers for the local view of remote clients.\n")
+		TEXT("Whether to run the ECS task graph in multiple cores\n")
 		TEXT("0: Disable, 1: Enable"),
 		ECVF_Default);
 }

@@ -51,17 +51,21 @@ void UECS_ComponentSystemLink::RegisterWithECS(ECS_World* _ECS, EntityHandle ent
 	auto reg = _ECS->GetRegistry();
 	auto ent = entity.handle;
 
-	reg->accommodate<FActorReference>(ent, GetOwner());
+	init_comp(_ECS, entity, FActorReference{GetOwner()});
 
 	if (TransformSync == ETransformSyncType::Actor_To_ECS || TransformSync == ETransformSyncType::BothWays)
 	{
-		reg->accommodate<FCopyTransformToECS>(ent,CopyToECS);
+		init_comp(_ECS, entity, CopyToECS);
+		
 	}
-	if (TransformSync == ETransformSyncType::ECS_To_Actor	|| TransformSync == ETransformSyncType::BothWays)
+	if (TransformSync == ETransformSyncType::ECS_To_Actor || TransformSync == ETransformSyncType::BothWays)
 	{
-		reg->accommodate<FCopyTransformToActor>(ent, CopyToActor);
+		init_comp(_ECS, entity, CopyToActor);
+		
 	}
-	reg->accommodate<FGridMap>(ent);
+	//FGridMap g;
+	init_comp(_ECS, entity, FGridMap{});
+	
 
 
 	//request all other components to add their ECS component to this actor

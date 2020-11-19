@@ -105,11 +105,10 @@ struct FMovementRaycast {
 
 struct FRaycastResult {
 
-
+	FRaycastResult() = default;
 	FRaycastResult(FTraceHandle _handle) :handle(_handle) { };
 
 	FTraceHandle handle;
-
 };
 
 struct FGridMap {
@@ -175,10 +174,9 @@ struct FActorReference {
 USTRUCT(BlueprintType)
 struct FLifetime {
 	GENERATED_BODY()
-	FLifetime() :LifeLeft(0.0){}
 
 	UPROPERTY(EditAnywhere, Category = "ECS")
-	float LifeLeft;
+	float LifeLeft=0;
 };
 
 //struct FDestroy
@@ -271,7 +269,8 @@ public:
 	UECS_PositionComponentWrapper() { PrimaryComponentTick.bCanEverTick = false; };
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
-		world->GetRegistry()->accommodate<FPosition>(entity.handle,Value);
+		init_comp(world, entity, Value);
+		//world->GetRegistry()->accommodate<FPosition>(entity.handle,Value);
 	};
 
 	UPROPERTY(EditAnywhere, Category = "ECS")
@@ -285,7 +284,7 @@ public:
 	UECS_DeleterComponentWrapper() { PrimaryComponentTick.bCanEverTick = false; };
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
-		world->GetRegistry()->accommodate<FLifetime>(entity.handle, Value);
+		init_comp(world, entity, Value);//world->GetRegistry()->accommodate<FLifetime>(entity.handle, Value);
 	};
 
 	UPROPERTY(EditAnywhere, Category = "ECS")
@@ -299,7 +298,7 @@ public:
 	UECS_FRandomArcSpawnComponentWrapper() { PrimaryComponentTick.bCanEverTick = false; };
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
-		world->GetRegistry()->accommodate<FRandomArcSpawn>(entity.handle, Value);
+		init_comp(world, entity, Value);//world->GetRegistry()->accommodate<FRandomArcSpawn>(entity.handle, Value);
 	};
 
 	UPROPERTY(EditAnywhere, Category = "ECS")
@@ -314,7 +313,7 @@ public:
 	UECS_ScaleComponentWrapper() { PrimaryComponentTick.bCanEverTick = false; };
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
-		world->GetRegistry()->accommodate<FScale>(entity.handle, Value);
+		init_comp(world, entity, Value);//world->GetRegistry()->accommodate<FScale>(entity.handle, Value);
 	};
 
 	UPROPERTY(EditAnywhere, Category = "ECS")
@@ -328,8 +327,9 @@ class ECSTESTING_API UECS_MovementComponentWrapper : public UActorComponent, pub
 public:
 	UECS_MovementComponentWrapper() { PrimaryComponentTick.bCanEverTick = false; };
 
-	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
-		world->GetRegistry()->accommodate<FMovement>(entity.handle);
+	virtual void AddToEntity(ECS_World* world, EntityHandle entity) {
+		//FMovement m;
+		init_comp(world, entity, FMovement{});//world->GetRegistry()->accommodate<FMovement>(entity.handle);
 	};
 };
 
@@ -341,7 +341,7 @@ public:
 	UECS_DebugSphereComponentWrapper(){ PrimaryComponentTick.bCanEverTick = false; }
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
-		world->GetRegistry()->accommodate<FDebugSphere>(entity.handle, Value);
+		init_comp(world, entity, Value);//world->GetRegistry()->accommodate<FDebugSphere>(entity.handle, Value);
 	};
 
 	UPROPERTY(EditAnywhere, Category = "ECS")
@@ -356,7 +356,7 @@ public:
 	UECS_InstancedStaticMeshComponentWrapper() { PrimaryComponentTick.bCanEverTick = false; };
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
-		world->GetRegistry()->accommodate<FInstancedStaticMesh>(entity.handle, Value);
+		init_comp(world, entity, Value);//world->GetRegistry()->accommodate<FInstancedStaticMesh>(entity.handle, Value);
 	};
 
 	UPROPERTY(EditAnywhere, Category = "ECS")
@@ -372,7 +372,7 @@ public:
 	UECS_VelocityComponentWrapper() { PrimaryComponentTick.bCanEverTick = false; };
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
-		world->GetRegistry()->accommodate<FVelocity>(entity.handle, Value);
+		init_comp(world, entity, Value);//world->GetRegistry()->accommodate<FVelocity>(entity.handle, Value);
 	};
 
 	UPROPERTY(EditAnywhere, Category = "ECS")
@@ -388,7 +388,7 @@ public:
 	UECS_RotationComponentWrapper() { PrimaryComponentTick.bCanEverTick = false; };
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
-		world->GetRegistry()->accommodate<FRotationComponent>(entity.handle, Value);
+		init_comp(world, entity, Value);//world->GetRegistry()->accommodate<FRotationComponent>(entity.handle, Value);
 	};
 
 	UPROPERTY(EditAnywhere, Category = "ECS")
@@ -405,7 +405,7 @@ public:
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
 		Value.Canary = 420;
-		world->GetRegistry()->accommodate<FArchetypeSpawner>(entity.handle, Value);
+		init_comp(world, entity, Value);//world->GetRegistry()->accommodate<FArchetypeSpawner>(entity.handle, Value);
 	};
 
 	UPROPERTY(EditAnywhere, Category = "ECS")
@@ -420,7 +420,7 @@ public:
 	UECS_MovementRaycastComponentWrapper() { PrimaryComponentTick.bCanEverTick = false; };
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
-		world->GetRegistry()->accommodate<FMovementRaycast>(entity.handle, Value);
+		init_comp(world, entity, Value);//world->GetRegistry()->accommodate<FMovementRaycast>(entity.handle, Value);
 	};
 	
 	UPROPERTY(EditAnywhere, Category = "ECS")

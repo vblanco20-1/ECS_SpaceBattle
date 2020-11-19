@@ -82,7 +82,7 @@ public:
 	UECS_FactionComponentWrapper() { PrimaryComponentTick.bCanEverTick = false; };
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
-		world->GetRegistry()->accommodate<FFaction>(entity.handle,Value);
+		init_comp(world, entity, Value);
 	};
 	UPROPERTY(EditAnywhere, Category = ECS)
 	FFaction Value;
@@ -96,7 +96,7 @@ public:
 	UECS_HealthComponentWrapper() { PrimaryComponentTick.bCanEverTick = false; };
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
-		world->GetRegistry()->accommodate<FHealth>(entity.handle, Value);
+		init_comp(world, entity, Value);
 	};
 	UPROPERTY(BlueprintAssignable, Category = "ECS")
 		FDamagedDelegate OnDamaged;
@@ -112,7 +112,7 @@ public:
 	UECS_SpaceshipComponentWrapper() { PrimaryComponentTick.bCanEverTick = false; };
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
-		world->GetRegistry()->accommodate<FSpaceship>(entity.handle, Value);
+		init_comp(world, entity, Value);
 	};
 	UPROPERTY(EditAnywhere, Category = ECS)
 		FSpaceship Value;
@@ -125,7 +125,7 @@ public:
 	UECS_ProjectileComponentWrapper() { PrimaryComponentTick.bCanEverTick = false; };
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
-		world->GetRegistry()->accommodate<FProjectile>(entity.handle, Value);
+		init_comp(world, entity, Value);
 	};
 	UPROPERTY(EditAnywhere, Category = ECS)
 		FProjectile Value;
@@ -139,7 +139,7 @@ public:
 	UECS_ExplosionComponentWrapper() { PrimaryComponentTick.bCanEverTick = false; };
 
 	virtual void AddToEntity(ECS_World * world, EntityHandle entity) {
-		world->GetRegistry()->accommodate<FExplosion>(entity.handle, Value);
+		init_comp(world, entity, Value);
 	};
 	UPROPERTY(EditAnywhere, Category = ECS)
 		FExplosion Value;

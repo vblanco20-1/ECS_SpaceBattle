@@ -278,7 +278,7 @@ void ECSSystemScheduler::Run(bool runParallel, ECS_Registry& reg)
 		int loopcounts = 0;
 		bool breakloop = false;
 		while (totalTasks > 0  && !breakloop) {
-
+			SCOPE_CYCLE_COUNTER(STAT_TS_SyncLoop);
 
 			GraphTask* gametask;
 			while (gameTasks.Dequeue(gametask))
