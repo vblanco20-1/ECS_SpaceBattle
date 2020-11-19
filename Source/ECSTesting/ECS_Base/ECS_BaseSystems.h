@@ -46,11 +46,10 @@ struct CopyTransformToECSSystem :public System {
 	void schedule(ECSSystemScheduler* sysScheduler) override;
 
 	//queries
-	flecs::query<FCopyTransformToECS, FActorReference> q_copyactor;
-	flecs::query<FCopyTransformToECS, FActorReference, FActorTransform> q_copyactor_tf;
-	flecs::query<const FActorTransform, FPosition> q_tfpos;
-	flecs::query<const FActorTransform, FRotationComponent> q_tfrot;
-	flecs::query<const FActorTransform, FScale> q_tfsc;
+	//flecs::query<const FCopyTransformToECS, const FActorReference> q_copyactor;
+	flecs::query<const FCopyTransformToECS, const FActorReference, FActorTransform> q_copyactor_tf;
+	
+	flecs::query<const FActorTransform, FPosition*, FRotationComponent*, FScale*> q_transforms;
 };
 DECLARE_CYCLE_STAT(TEXT("ECS: Copy Transform To Actor"), STAT_CopyTransformActor, STATGROUP_ECS);
 DECLARE_CYCLE_STAT(TEXT("ECS: Pack actor transform"), STAT_PackActorTransform, STATGROUP_ECS);
@@ -146,14 +145,23 @@ struct RaycastSystem :public System {
 
 	struct RaycastUnit {
 		EntityID et;
-		FRaycastResult* ray;
+		FTraceHandle* ray;
 	};
+	struct RaycastRequest {
+		EntityID et;
+		FTraceHandle handle;
+		FVector Start;
+		FVector End;
+		TEnumAsByte<ECollisionChannel> RayChannel;
+	};
+
+	TArray<RaycastRequest> rayRequests;
 	TArray<RaycastUnit> rayUnits;
 	moodycamel::ConcurrentQueue<ExplosionStr> explosions;
 	moodycamel::ConcurrentQueue<ActorBpCall> actorCalls;
 
 	flecs::query<FRaycastResult> q_rays;
-	flecs::query<FMovementRaycast, FPosition, FLastPosition> q_raycreate;
+	flecs::query<const FMovementRaycast, const FPosition, const FLastPosition/*, const FRaycastResult*/> q_raycreate;
 };
 DECLARE_CYCLE_STAT(TEXT("ECS: Lifetime System"), STAT_Lifetime, STATGROUP_ECS);
 struct LifetimeSystem :public System {

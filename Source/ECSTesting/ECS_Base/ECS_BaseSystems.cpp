@@ -214,7 +214,7 @@ void ArchetypeSpawnerSystem::update(ECS_Registry &registry, float dt)
 {
 	
 }
-PRAGMA_DISABLE_OPTIMIZATION
+//PRAGMA_DISABLE_OPTIMIZATION
 void ArchetypeSpawnerSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder("Spawner", 1000000, sysScheduler,0.1);
@@ -315,7 +315,7 @@ void ArchetypeSpawnerSystem::schedule(ECSSystemScheduler* sysScheduler)
 
 	sysScheduler->AddTaskgraph(builder.FinishGraph());
 }
-PRAGMA_ENABLE_OPTIMIZATION
+//PRAGMA_ENABLE_OPTIMIZATION
 void RaycastSystem::update(ECS_Registry &registry, float dt)
 {
 	
@@ -324,22 +324,23 @@ void RaycastSystem::update(ECS_Registry &registry, float dt)
 void RaycastSystem::CheckRaycasts(ECS_Registry& registry, float dt, UWorld* GameWorld)
 {
 	rayUnits.Reset();
-	//check all the raycast results from the async raycast
-	q_rays.each([&, dt](auto entity, FRaycastResult& ray) {
-	
+
+	//check all the raycast results from the async raycast	
+	for (auto& ray : rayRequests)
+	{
 		if (GameWorld->IsTraceHandleValid(ray.handle, false))
 		{
-			rayUnits.Add({ entity.id(), &ray });
-		}	
-	});
-
+			rayUnits.Add({ ray.et, &ray.handle });
+		}
+	}
+	
 	ParallelFor(rayUnits.Num(), [&](auto i) {
 
-		auto ray = *rayUnits[i].ray;
+		auto &ray = *rayUnits[i].ray;
 		auto entity = rayUnits[i].et;
 
 		FTraceDatum tdata;
-		GameWorld->QueryTraceData(ray.handle, tdata);
+		GameWorld->QueryTraceData(ray, tdata);
 		if (tdata.OutHits.IsValidIndex(0))
 		{
 			//it actually hit
@@ -412,42 +413,50 @@ void  RaycastSystem::schedule(ECSSystemScheduler* sysScheduler)
 	});
 
 	sysScheduler->AddTaskgraph(builder.FinishGraph());
-	TaskDependencies deps2;
 
-	deps2.AddWrite< FRaycastResult >();
+	TaskDependencies deps2;
+	//deps2.AddWrite< FRaycastResult >();
 	deps2.AddRead<FMovementRaycast>();
 	deps2.AddRead<FPosition>();
 	deps2.AddRead<FLastPosition>();
-
+	//deps2.AddWrite<ECS_Registry>();
 
 	SystemTaskBuilder builder_ray("Raycast", 999, sysScheduler,2.5);
 
-	//builder_ray.SetPriority(2.5);
-	builder_ray.AddGameTask(deps2,[=](ECS_Registry& reg) {
-	//builder.AddSyncTask(/*deps2,*/ [=](ECS_Registry& reg) {
+	builder_ray.AddTask(deps2, [=](ECS_Registry& reg) {
 		SCOPE_CYCLE_COUNTER(STAT_RaycastResults);
 
-		UWorld* GameWorld = OwnerActor->GetWorld();
-		//movement raycast needs a "last position" component
-
-		reg.defer_begin();
-
-		q_raycreate.each([&, dt](auto entity, FMovementRaycast& ray, FPosition& pos, FLastPosition& lastPos) {
+		//add raycast result in bulk to whatever doesnt have one yet		
+		rayRequests.Reset();
+		q_raycreate.each([&, dt](auto entity, const FMovementRaycast& ray, const FPosition& pos, const FLastPosition& lastPos/*, FRaycastResult& handle*/) {
 
 			if (pos.pos != lastPos.pos)
 			{
-				FTraceHandle hit = GameWorld->AsyncLineTraceByChannel(EAsyncTraceType::Single, lastPos.pos, pos.pos, ray.RayChannel);
-
-				entity.set<FRaycastResult>(hit);
+				RaycastRequest newRay;
+				newRay.Start = lastPos.pos;
+				newRay.End = pos.pos;
+				newRay.RayChannel = ray.RayChannel;
+				newRay.et = entity.id();
+				rayRequests.Add(newRay);
 			}
+			});
 		});
+	builder_ray.AddDependency("Movement");
+	builder_ray.AddDependency("RayCheck");
 
-		reg.defer_end();
+	SystemTaskBuilder builder_rayg("RaycastGame", 1200, sysScheduler, 5);
+	builder_rayg.AddGameTask({},[=](ECS_Registry& reg) {
+		SCOPE_CYCLE_COUNTER(STAT_RaycastResults);
+		UWorld* GameWorld = OwnerActor->GetWorld();
+		for (auto& r : rayRequests)
+		{
+			r.handle = GameWorld->AsyncLineTraceByChannel(EAsyncTraceType::Single, r.Start, r.End, r.RayChannel);
+		}
 	});
 
-	builder_ray.AddDependency("RayCheck");
-	builder_ray.AddDependency("Movement");
-
+	builder_rayg.AddDependency("Raycast");
+	
+	sysScheduler->AddTaskgraph(builder_rayg.FinishGraph());
 	sysScheduler->AddTaskgraph(builder_ray.FinishGraph());
 		
 	SystemTaskBuilder builder2("RayExplosions", LifetimeSystem::DeletionSync-1, sysScheduler);
@@ -682,41 +691,41 @@ void CopyTransformToECSSystem::schedule(ECSSystemScheduler* sysScheduler)
 {
 	SystemTaskBuilder builder("CopyTransform", 100, sysScheduler);
 	init_query(q_copyactor_tf, sysScheduler->registry);
-	init_query(q_copyactor, sysScheduler->registry);
-	init_query(q_tfpos, sysScheduler->registry);
-	init_query(q_tfrot, sysScheduler->registry);
-	init_query(q_tfsc, sysScheduler->registry);
+	//init_query(q_copyactor, sysScheduler->registry);
+
+
+	init_query(q_transforms, sysScheduler->registry);
 
 	TaskDependencies deps1;
 	deps1.AddWrite < FActorTransform>();
 	deps1.AddRead<FCopyTransformToECS>();
 	deps1.AddRead<FActorReference>();
 
-	builder.AddGameTask(deps1,
-	//builder.AddSyncTask(//deps1,
+	TaskDependencies depsfirst;
+
+	depsfirst.AddWrite<ECS_Registry>();
+
+	builder.AddGameTask(depsfirst,
+		
 		[=](ECS_Registry& reg) {
 			SCOPE_CYCLE_COUNTER(STAT_CopyTransformECS);
 
-			reg.defer_begin();
-			q_copyactor.each([&](flecs::entity e, FCopyTransformToECS& p, FActorReference& v) {
-				//if (!e.has<FActorTransform>()) 
-				{
-					if (v.ptr.IsValid())
-					{
-						const FTransform& ActorTransform = v.ptr->GetActorTransform();
-						e.set<FActorTransform>(ActorTransform);
-					}
-				}
-			});
-			reg.defer_end();
+			//all movers get a transform component if they dont have one yet
+			auto raypos_filter = flecs::filter(reg).include<FCopyTransformToECS>().include<FActorReference>().exclude<FActorTransform>();
 
-			q_copyactor_tf.each([&](flecs::entity e, FCopyTransformToECS& p, FActorReference& v, FActorTransform& tf) {
+			reg.add<FActorTransform>(raypos_filter);
+		}
+	);
+
+	builder.AddGameTask(deps1,
+		[=](ECS_Registry& reg) {
+			SCOPE_CYCLE_COUNTER(STAT_CopyTransformECS);
+
+			q_copyactor_tf.each([&](auto e, const FCopyTransformToECS& p, const FActorReference& v, FActorTransform& tf) {
+				if (v.ptr.IsValid())
 				{
-					if (v.ptr.IsValid())
-					{
-						const FTransform& ActorTransform = v.ptr->GetActorTransform();
-						tf.transform = ActorTransform;
-					}
+					const FTransform& ActorTransform = v.ptr->GetActorTransform();
+					tf.transform = ActorTransform;
 				}
 			});
 		}
@@ -725,8 +734,8 @@ void CopyTransformToECSSystem::schedule(ECSSystemScheduler* sysScheduler)
 
 	TaskDependencies deps;
 	deps.AddWrite<FPosition>();
-	deps.AddWrite < FVelocity>();
-	deps.AddWrite < FScale>();
+	deps.AddWrite<FVelocity>();
+	deps.AddWrite<FScale>();
 	deps.AddRead<FActorTransform>();
 		
 	builder.AddTask(
@@ -734,14 +743,20 @@ void CopyTransformToECSSystem::schedule(ECSSystemScheduler* sysScheduler)
 			[=](ECS_Registry& reg) {
 
 				SCOPE_CYCLE_COUNTER(STAT_UnpackActorTransform);
-				q_tfpos.each([](auto entity, const FActorTransform& transform, FPosition& pos) {
-					pos.pos = transform.transform.GetLocation();
-				});
-				q_tfrot.each([](auto entity, const FActorTransform& transform, FRotationComponent& rot) {
-					rot.rot = transform.transform.GetRotation();
-					});
-				q_tfsc.each([](auto entity, const FActorTransform& transform, FScale& sc) {
-					sc.scale = transform.transform.GetScale3D();
+				
+				q_transforms.each([](auto entity, const FActorTransform& transform, FPosition* pos, FRotationComponent* rot, FScale* sc) {
+					if (pos)
+					{
+						pos->pos = transform.transform.GetLocation();
+					}
+					if (rot)
+					{
+						rot->rot = transform.transform.GetRotation();
+					}
+					if (sc)
+					{
+						sc->scale = transform.transform.GetScale3D();
+					}
 				});
 			}
 	);
@@ -767,19 +782,21 @@ void  MovementSystem::schedule(ECSSystemScheduler* sysScheduler)
 	deps.AddWrite<FVelocity>();
 	deps.AddWrite<FLastPosition>();
 	deps.AddRead<FMovement>();
-	deps.AddRead<FMovementRaycast>();
-	deps.AddWrite<ECS_Registry>();
-
+	
 	builder.AddDependency("Boids");
-	builder.AddTask(
-		deps,
-		[=](ECS_Registry& reg) {			
+
+	builder.AddSyncTask(
+		[=](ECS_Registry& reg) {
 
 			//movement raycast gets a "last position" component
 			auto raypos_filter = flecs::filter(reg).include<FMovementRaycast>().include<FPosition>().exclude<FLastPosition>();
-			
-			reg.add<FLastPosition>(raypos_filter);
 
+			reg.add<FLastPosition>(raypos_filter);
+		}
+	);
+	builder.AddTask(
+		deps,
+		[=](ECS_Registry& reg) {
 			q_positions.each([&, dt](auto entity, FLastPosition& lastpos,const FPosition& pos) {
 				lastpos.pos = pos.pos;
 			});
