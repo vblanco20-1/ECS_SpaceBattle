@@ -65,8 +65,7 @@ struct BoidSystem :public System {
 		FVelocity * vel;
 	};
 
-	TArray<ProjectileData> ProjArray;
-	TArray<SpaceshipData> SpaceshipArray;
+	
 	TMap<FIntVector, TArray<GridItem>> GridMap;
 
 	void AddToGridmap(flecs::entity ent, FPosition&pos);
@@ -104,6 +103,11 @@ struct BoidSystem :public System {
 
 	void UpdateAllBoids(ECS_Registry& registry, float dt);
 
+	void update_projectile(ProjectileData& data, float dt);
+
+	
+
+	void update_spaceship(SpaceshipData& data/*TypedLinearMemory<SpaceshipData> SpaceshipArray, int32 Index*/, float dt);
 	void UpdateGridmap(ECS_Registry& registry);
 
 
@@ -112,4 +116,8 @@ struct BoidSystem :public System {
 	flecs::query <FGridMap, FPosition> q_grid;
 	flecs::query <FSpaceship, FPosition, FVelocity, FFaction> q_ships;
 	flecs::query<FProjectile, FPosition, FVelocity, FFaction > q_projectiles;
+
+	//temporal storage
+	TArray<ProjectileData> ProjArray;
+	TArray<SpaceshipData> SpaceshipArray;
 };

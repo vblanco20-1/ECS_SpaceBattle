@@ -95,71 +95,37 @@ void BoidSystem::update(ECS_Registry& registry, float dt)
 	}
 }
 
+//PRAGMA_DISABLE_OPTIMIZATION
 void BoidSystem::UpdateAllBoids(ECS_Registry& registry, float dt)
 {
+
+	
+	unsigned int NumShips = 0;
+	unsigned int NumProjectiles = 0;
+
+
+
+	ProjArray.Reset();
+	SpaceshipArray.Reset();
+
 	{
 		SCOPE_CYCLE_COUNTER(STAT_Boids);
 
-		TypedLinearMemory<ProjectileData> ProjArray(World->ScratchPad);
-
-		//auto ProjectileView = registry.view<FProjectile, FPosition, FVelocity, FFaction>( );
-		
-		unsigned int NumProjectiles = 0;
+		//TypedLinearMemory<ProjectileData> ProjArray(World->ScratchPad);
 		//copy projectile data into array so we can do a parallel update later
 
-		q_projectiles.each([&](auto et,FProjectile &proj, FPosition& pos, FVelocity& vel, FFaction& fact) {
+		q_projectiles.each([&](auto et, FProjectile& proj, FPosition& pos, FVelocity& vel, FFaction& fact) {
 			ProjectileData Projectile;
 			Projectile.faction = fact;
 			Projectile.pos = pos;
 			Projectile.proj = proj;
 
 			Projectile.vel = &vel;
-			ProjArray.push_back(Projectile);
+			ProjArray.Add(Projectile);
 			NumProjectiles++;
-		});
-
-		ParallelFor(NumProjectiles, [&](int32 Index)
-			{
-				ProjectileData data = ProjArray[Index];
-
-				//unpack projectile data
-				const FVector ProjPosition = data.pos.pos;
-				const EFaction ProjFaction = data.faction.faction;
-				const float ProjSeekStrenght = data.proj.HeatSeekStrenght;
-				const float ProjMaxVelocity = data.proj.MaxVelocity;
-				FVector& ProjVelocity = data.vel->vel;
-
-
-				const float ProjCheckRadius = 1000;
-				Foreach_EntitiesInRadius(ProjCheckRadius, ProjPosition, [&](GridItem& item) {
-
-					if (item.Faction != ProjFaction)
-					{
-						const FVector TestPosition = item.Position;
-
-						const float DistSquared = FVector::DistSquared(TestPosition, ProjPosition);
-
-						const float AvoidanceDistance = ProjCheckRadius * ProjCheckRadius;
-						const float DistStrenght = FMath::Clamp(1.0 - (DistSquared / (AvoidanceDistance)), 0.1, 1.0) * dt;
-						const FVector AvoidanceDirection = TestPosition - ProjPosition;
-
-						ProjVelocity += (AvoidanceDirection.GetSafeNormal() * ProjSeekStrenght * DistStrenght);
-					}
-					});
-
-				ProjVelocity = ProjVelocity.GetClampedToMaxSize(ProjMaxVelocity);
 			});
 
-	}
-	//its not good to have both spaceship and projectile logic here, they should be on their own systems
-	{
-		SCOPE_CYCLE_COUNTER(STAT_Boids);
-
-
-		//auto SpaceshipView = registry.view<FSpaceship, FPosition, FVelocity, FFaction>( );
-
-		TypedLinearMemory<SpaceshipData> SpaceshipArray(World->ScratchPad);
-		unsigned int NumShips = 0;
+		//TypedLinearMemory<SpaceshipData> SpaceshipArray(World->ScratchPad);
 		//copy spaceship data into array so we can do a paralle update later
 		q_ships.each([&](auto et, FSpaceship& ship, FPosition& pos, FVelocity& vel, FFaction& fact) {
 			SpaceshipData Ship;
@@ -168,48 +134,95 @@ void BoidSystem::UpdateAllBoids(ECS_Registry& registry, float dt)
 			Ship.ship = ship;
 
 			Ship.vel = &vel;
-			SpaceshipArray.push_back(Ship);
+			SpaceshipArray.Add(Ship);
 			NumShips++;
-		});		
-
-		ParallelFor(NumShips, [&](int32 Index)
-			{
-				SpaceshipData data = SpaceshipArray[Index];
-
-				//unpack ship variables from the array
-				const FVector ShipPosition = data.pos.pos;
-				const EFaction ShipFaction = data.faction.faction;
-				const float ShipAvoidanceStrenght = data.ship.AvoidanceStrenght;
-				const float ShipMaxVelocity = data.ship.MaxVelocity;
-				FVector& ShipVelocity = data.vel->vel;
-				const FVector ShipTarget = data.ship.TargetMoveLocation;
-
-				const float shipCheckRadius = 1000;
-				Foreach_EntitiesInRadius(shipCheckRadius, ShipPosition, [&](GridItem& item) {
-
-					if (item.Faction == ShipFaction)
-					{
-						const FVector TestPosition = item.Position;
-
-						const float DistSquared = FVector::DistSquared(TestPosition, ShipPosition);
-
-						const float AvoidanceDistance = shipCheckRadius * shipCheckRadius;
-						const float DistStrenght = FMath::Clamp(1.0 - (DistSquared / (AvoidanceDistance)), 0.1, 1.0) * dt;
-						const FVector AvoidanceDirection = ShipPosition - TestPosition;
-
-						ShipVelocity += AvoidanceDirection.GetSafeNormal() * ShipAvoidanceStrenght * DistStrenght;
-					}
-					});
-
-				FVector ToTarget = ShipTarget - ShipPosition;
-				ToTarget.Normalize();
-
-				ShipVelocity += (ToTarget * 500 * dt);
-				ShipVelocity = ShipVelocity.GetClampedToMaxSize(ShipMaxVelocity);
 			});
-
-
 	}
+	{
+	SCOPE_CYCLE_COUNTER(STAT_Boids);
+
+		//update both projectiles at ships at once for best parallelism
+		ParallelFor(NumProjectiles + NumShips, [&](int32 Index){
+			if (Index < (int32)NumProjectiles)
+			{
+				ProjectileData data = ProjArray[Index];
+
+				update_projectile(data, dt);
+			}
+			else {
+				Index = Index - NumProjectiles;
+				SpaceshipData data = SpaceshipArray[Index];
+				update_spaceship(data, dt);
+			}
+		});
+	}
+}
+//PRAGMA_ENABLE_OPTIMIZATION
+
+void BoidSystem::update_projectile(ProjectileData& data, float dt)
+{
+	//unpack projectile data
+	const FVector ProjPosition = data.pos.pos;
+	const EFaction ProjFaction = data.faction.faction;
+	const float ProjSeekStrenght = data.proj.HeatSeekStrenght;
+	const float ProjMaxVelocity = data.proj.MaxVelocity;
+	FVector& ProjVelocity = data.vel->vel;
+
+
+	const float ProjCheckRadius = 1000;
+	Foreach_EntitiesInRadius(ProjCheckRadius, ProjPosition, [&](GridItem& item) {
+
+		if (item.Faction != ProjFaction)
+		{
+			const FVector TestPosition = item.Position;
+
+			const float DistSquared = FVector::DistSquared(TestPosition, ProjPosition);
+
+			const float AvoidanceDistance = ProjCheckRadius * ProjCheckRadius;
+			const float DistStrenght = FMath::Clamp(1.0 - (DistSquared / (AvoidanceDistance)), 0.1, 1.0) * dt;
+			const FVector AvoidanceDirection = TestPosition - ProjPosition;
+
+			ProjVelocity += (AvoidanceDirection.GetSafeNormal() * ProjSeekStrenght * DistStrenght);
+		}
+	});
+
+	ProjVelocity = ProjVelocity.GetClampedToMaxSize(ProjMaxVelocity);
+}
+
+void BoidSystem::update_spaceship(SpaceshipData& data/*TypedLinearMemory<SpaceshipData> SpaceshipArray, int32 Index*/, float dt)
+{
+	
+
+	//unpack ship variables from the array
+	const FVector ShipPosition = data.pos.pos;
+	const EFaction ShipFaction = data.faction.faction;
+	const float ShipAvoidanceStrenght = data.ship.AvoidanceStrenght;
+	const float ShipMaxVelocity = data.ship.MaxVelocity;
+	FVector& ShipVelocity = data.vel->vel;
+	const FVector ShipTarget = data.ship.TargetMoveLocation;
+
+	const float shipCheckRadius = 1000;
+	Foreach_EntitiesInRadius(shipCheckRadius, ShipPosition, [&](GridItem& item) {
+
+		if (item.Faction == ShipFaction)
+		{
+			const FVector TestPosition = item.Position;
+
+			const float DistSquared = FVector::DistSquared(TestPosition, ShipPosition);
+
+			const float AvoidanceDistance = shipCheckRadius * shipCheckRadius;
+			const float DistStrenght = FMath::Clamp(1.0 - (DistSquared / (AvoidanceDistance)), 0.1, 1.0) * dt;
+			const FVector AvoidanceDirection = ShipPosition - TestPosition;
+
+			ShipVelocity += AvoidanceDirection.GetSafeNormal() * ShipAvoidanceStrenght * DistStrenght;
+		}
+	});
+
+	FVector ToTarget = ShipTarget - ShipPosition;
+	ToTarget.Normalize();
+
+	ShipVelocity += (ToTarget * 500 * dt);
+	ShipVelocity = ShipVelocity.GetClampedToMaxSize(ShipMaxVelocity);
 }
 
 void BoidSystem::UpdateGridmap(ECS_Registry& registry)
@@ -240,7 +253,6 @@ void BoidSystem::schedule(ECSSystemScheduler* sysScheduler)
 	builder.AddTask(deps1,
 		[=](ECS_Registry& reg) {
 			UpdateGridmap(reg);
-		
 	});
 	
 
@@ -248,9 +260,8 @@ void BoidSystem::schedule(ECSSystemScheduler* sysScheduler)
 	deps2.AddWrite < FVelocity >();
 	deps2.AddRead < FGridMap >();	
 	deps2.AddRead < FSpaceship>();
-	deps2.AddWrite <FPosition >();
+	deps2.AddRead <FPosition >();
 	deps2.AddRead < FProjectile>();
-	//builder.AddSyncTask(
 	builder.AddTask(deps2,
 		[=](ECS_Registry& reg) {
 			UpdateAllBoids(reg, 1.0/60.0);
